@@ -12,7 +12,7 @@ Independent research repository for M1, M2, M4 and M5 only. Model 3 remains in t
 | M5 | Funding + taker flow | 13,122 |
 | **Total** | | **78,732** |
 
-BTCUSDT + ETHUSDT, each on 5m + 15m = **314,928 raw combinations**. M2's raw grid includes all nine fast/slow EMA pairings; pairs where fast EMA >= slow EMA are retained in the audit ledger as explicitly skipped invalid configurations. Valid EMA pairings = 6, yielding 8,748 executable M2 configurations per symbol/timeframe.
+BTCUSDT + ETHUSDT, each on 5m + 15m = **314,928 raw combinations**. M2's raw grid includes all nine fast/slow EMA pairings. All nine are valid because every requested fast EMA (10/20/30) is below every requested slow EMA (50/100/200). Therefore all 13,122 M2 configurations are executable.
 
 ## Research design
 - Binance USD-M perpetual historical 1-minute klines aggregated to 5m/15m.
