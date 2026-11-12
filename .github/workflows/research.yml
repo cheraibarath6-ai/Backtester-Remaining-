@@ -1,0 +1,57 @@
+name: Crypto Futures M1 M2 M4 M5 Exhaustive Grid
+on:
+  workflow_dispatch:
+    inputs:
+      start:
+        description: Inclusive UTC start date
+        required: true
+        default: "2024-01-01"
+      end:
+        description: Exclusive UTC end date
+        required: true
+        default: "2025-01-01"
+permissions:
+  contents: read
+jobs:
+  grid:
+    name: ${{ matrix.model }} / ${{ matrix.symbol }} / ${{ matrix.timeframe }} / shard ${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        model: [M1, M2, M4, M5]
+        symbol: [BTCUSDT, ETHUSDT]
+        timeframe: ["5m", "15m"]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Compile and test
+        run: python -m compileall -q crypto_research tests && python -m pytest -q
+      - name: Execute deterministic shard
+        run: >
+          python -m crypto_research.run
+          --start "${{ inputs.start }}"
+          --end "${{ inputs.end }}"
+          --symbols "${{ matrix.symbol }}"
+          --timeframes "${{ matrix.timeframe }}"
+          --models "${{ matrix.model }}"
+          --shard-index "${{ matrix.shard }}"
+          --shard-count 8
+          --fee-bps 5 --slippage-bps 2 --rr 2
+          --out artifacts
+      - name: Upload shard results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: grid-${{ matrix.model }}-${{ matrix.symbol }}-${{ matrix.timeframe }}-shard-${{ matrix.shard }}
+          path: artifacts/
+          if-no-files-found: warn
+          retention-days: 30
