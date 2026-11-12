@@ -8,11 +8,12 @@ def test_exact_raw_grid_counts_and_unique_rows():
         assert len(rows)==parameter_count(model)
         assert len({tuple(sorted(x.items())) for x in rows})==len(rows)
 
-def test_m2_invalid_ema_pairs_are_explicit_not_silently_removed():
+def test_m2_all_requested_ema_pairs_are_valid():
     rows=list(parameter_sets("M2"))
     invalid=[p for p in rows if invalid_reason("M2",p)]
-    assert len(invalid)==3*(3**6)*2
-    assert len(rows)-len(invalid)==8748
+    assert len(rows)==13122
+    # Fast values 10/20/30 are all below slow values 50/100/200.
+    assert len(invalid)==0
 
 def test_parameter_values_match_requested_ranges():
     assert GRID["M1"]["swing_lookback"]==[10,20,30]
