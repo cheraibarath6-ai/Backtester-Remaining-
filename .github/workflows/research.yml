@@ -1,5 +1,11 @@
 name: Crypto Futures M1 M2 M4 M5 Exhaustive Grid
 on:
+  # One-time bootstrap trigger: changes to this workflow launch the initial full baseline.
+  # Ordinary source-code pushes do not retrigger the expensive grid.
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/research.yml"
   workflow_dispatch:
     inputs:
       start:
