@@ -11,6 +11,16 @@ on:
       - "crypto_research/independent_models.py"
       - "crypto_research/aggregate_independent.py"
       - "tests/test_combinations.py"
+  pull_request:
+    branches: [research/funding-notional-audit-v2]
+    paths:
+      - ".github/workflows/m6-m11-combinations.yml"
+      - "crypto_research/combination_run.py"
+      - "crypto_research/backtest.py"
+      - "crypto_research/metrics.py"
+      - "crypto_research/independent_models.py"
+      - "crypto_research/aggregate_independent.py"
+      - "tests/test_combinations.py"
   workflow_dispatch:
     inputs:
       start:
@@ -26,7 +36,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: independent-m6-m11-combinations-${{ github.ref }}
+  group: independent-m6-m11-combinations-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
