@@ -7,7 +7,10 @@ on:
       - "crypto_research/backtest.py"
       - "crypto_research/independent_models.py"
       - "crypto_research/sensitivity_run.py"
+      - "crypto_research/aggregate_independent.py"
       - "tests/test_backtest.py"
+      - "tests/test_sensitivity.py"
+      - "tests/test_aggregate_independent.py"
       - ".github/workflows/m6-m11-sensitivity.yml"
   workflow_dispatch:
     inputs:
