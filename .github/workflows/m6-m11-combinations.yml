@@ -120,7 +120,6 @@ jobs:
 
   walkforward:
     name: Expanding walk-forward / ${{ matrix.symbol }}
-    if: github.event_name == 'pull_request'
     needs: combinations
     runs-on: ubuntu-latest
     timeout-minutes: 360
@@ -160,7 +159,7 @@ jobs:
 
   aggregate_walkforward:
     name: Aggregate expanding walk-forward
-    if: always() && github.event_name == 'pull_request'
+    if: always()
     needs: walkforward
     runs-on: ubuntu-latest
     steps:
