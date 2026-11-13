@@ -50,6 +50,9 @@ def run_backtest(
         else np.full(len(bars), np.nan, dtype=float)
     )
     index = bars.index
+    if not index.is_monotonic_increasing or index.has_duplicates:
+        raise ValueError("Bars must have a strictly increasing, duplicate-free index")
+    bar_delta = pd.Timedelta(minutes=bar_minutes)
 
     funding_index = None
     funding_rates = None
@@ -125,6 +128,21 @@ def run_backtest(
         })
 
     for i in range(1, len(bars)):
+        delta = index[i] - index[i - 1]
+        if delta < bar_delta:
+            raise ValueError("Bars contain overlapping or sub-timeframe timestamps")
+        if delta > bar_delta:
+            # There is an unobserved interval. Close any open position at the
+            # last known close for audit, but mark it DATA_GAP so it is excluded
+            # from performance statistics. Never carry exposure across an
+            # interval in which stops/targets could not have been observed.
+            if pos is not None:
+                held = i - pos["entry_i"]
+                finish_position(pos, index[i - 1], closes[i - 1], "DATA_GAP", held)
+                pos = None
+            # Do not execute a stale signal from the last bar before the gap.
+            continue
+
         # A signal from the previous completed bar enters at this bar's open.
         if pos is None and signals[i - 1] != 0:
             side = int(signals[i - 1])
@@ -148,7 +166,7 @@ def run_backtest(
                 "stop": float(stop),
                 "initial_stop": float(stop),
                 "target": float(target),
-                "entry_time": index[i] - pd.Timedelta(minutes=bar_minutes),
+                "entry_time": index[i] - bar_delta,
                 "entry_i": i,
             }
 
@@ -225,9 +243,19 @@ def summarize(t, risk_per_trade_pct=1.0):
     """
     if risk_per_trade_pct <= 0:
         raise ValueError("risk_per_trade_pct must be > 0")
+    total_trade_records = int(len(t))
+    data_gap_trades = (
+        int(t.exit_reason.eq("DATA_GAP").sum())
+        if "exit_reason" in t.columns else 0
+    )
+    if "exit_reason" in t.columns:
+        t = t.loc[~t.exit_reason.eq("DATA_GAP")].copy()
+
     if t.empty:
         return {
-            "trades": 0, "wins": 0, "losses": 0, "win_rate_pct": 0.0,
+            "trades": 0, "total_trade_records": total_trade_records,
+            "data_gap_trades": data_gap_trades,
+            "wins": 0, "losses": 0, "win_rate_pct": 0.0,
             "profit_factor": 0.0, "profit_factor_r": 0.0,
             "net_return_pct": 0.0, "notional_net_return_pct": 0.0,
             "net_bps": 0.0, "net_R": 0.0, "max_drawdown_pct": 0.0,
@@ -274,6 +302,8 @@ def summarize(t, risk_per_trade_pct=1.0):
         holding = pd.Series([float("nan")] * len(t), index=t.index)
     return {
         "trades": int(len(t)),
+        "total_trade_records": total_trade_records,
+        "data_gap_trades": data_gap_trades,
         "wins": int(len(w)),
         "losses": int(len(l)),
         "win_rate_pct": round(100 * len(w) / len(t), 2),
