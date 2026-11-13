@@ -110,8 +110,11 @@ def parse_daily_kline_archive(path: Path) -> pd.DataFrame:
         aliases = {
             "quote_asset_volume": "quote_volume",
             "number_of_trades": "trades",
+            "count": "trades",
             "taker_buy_base_asset_volume": "taker_buy_base",
+            "taker_buy_volume": "taker_buy_base",
             "taker_buy_quote_asset_volume": "taker_buy_quote",
+            "taker_buy_quote_volume": "taker_buy_quote",
         }
         data = data.rename(columns=aliases)
     else:
