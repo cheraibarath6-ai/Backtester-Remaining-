@@ -15,6 +15,7 @@ def run_backtest(
     rr=2.0,
     max_hold_bars=288,
     trailing_atr_multiple: float | None = None,
+    expected_end: str | pd.Timestamp | None = None,
 ):
     """
     Single-position, next-bar-open backtest.
@@ -226,7 +227,15 @@ def run_backtest(
 
     if pos is not None:
         held = len(bars) - pos["entry_i"]
-        finish_position(pos, index[-1], closes[-1], "END_OF_SAMPLE", held)
+        terminal_reason = "END_OF_SAMPLE"
+        if expected_end is not None:
+            end_ts = pd.Timestamp(expected_end)
+            end_ts = end_ts.tz_localize("UTC") if end_ts.tzinfo is None else end_ts.tz_convert("UTC")
+            # Strategy bars are right-labelled; raw 1m bars retain open-time labels.
+            expected_last = end_ts - bar_delta if timeframe == "1m" else end_ts
+            if index[-1] < expected_last:
+                terminal_reason = "DATA_GAP"
+        finish_position(pos, index[-1], closes[-1], terminal_reason, held)
 
     return pd.DataFrame(trades)
 

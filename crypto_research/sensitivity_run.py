@@ -152,6 +152,7 @@ def main():
                         rr=float(profile["rr"]),
                         max_hold_bars=max_hold_bars,
                         trailing_atr_multiple=trailing,
+                        expected_end=args.end,
                     )
                     stats = summarize(trades)
                     stats.update({

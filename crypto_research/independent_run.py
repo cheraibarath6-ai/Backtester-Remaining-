@@ -53,6 +53,7 @@ def _evaluate(
     max_hold_hours: float,
     benchmark_raw: pd.DataFrame | None,
     oi: pd.DataFrame | None,
+    expected_end: str | None = None,
 ) -> tuple[dict, pd.DataFrame, list[dict]]:
     if model == "M11" and (oi is None or oi.empty):
         return {
@@ -92,6 +93,7 @@ def _evaluate(
         slippage_bps,
         rr,
         max_hold_bars=max_hold_bars,
+        expected_end=expected_end,
     )
     stats = summarize(trades)
     stats.update({
@@ -197,7 +199,7 @@ def main():
                     stats, trades, years = _evaluate(
                         raw, funding, symbol, model, variant, timeframe,
                         args.fee_bps, args.slippage_bps, args.rr,
-                        args.max_hold_hours, benchmark_raw, oi,
+                        args.max_hold_hours, benchmark_raw, oi, args.end,
                     )
                     row = {**base, **stats}
                     if not trades.empty:

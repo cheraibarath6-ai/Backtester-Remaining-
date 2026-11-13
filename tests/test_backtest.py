@@ -261,3 +261,29 @@ def test_quality_report_lists_contiguous_missing_minute_intervals():
     assert quality["missing_intervals"][0]["start"] == "2024-01-01 00:02:00+00:00"
     assert quality["missing_intervals"][0]["end"] == "2024-01-01 00:03:00+00:00"
     assert quality["missing_intervals"][0]["minutes"] == 2
+
+
+
+def test_trailing_missing_interval_is_audited_as_data_gap_not_end_of_sample():
+    trades = run_backtest(
+        _bars(entry_high=105.0),
+        None, "BTCUSDT", "M6", "5m",
+        fee_bps=0, slippage_bps=0, rr=20,
+        expected_end="2024-01-01 00:20:00",
+    )
+    assert len(trades) == 1
+    assert trades.iloc[0].exit_reason == "DATA_GAP"
+    stats = summarize(trades)
+    assert stats["trades"] == 0
+    assert stats["data_gap_trades"] == 1
+
+
+def test_complete_end_of_sample_is_not_mislabelled_as_data_gap():
+    trades = run_backtest(
+        _bars(entry_high=105.0),
+        None, "BTCUSDT", "M6", "5m",
+        fee_bps=0, slippage_bps=0, rr=20,
+        expected_end="2024-01-01 00:15:00",
+    )
+    assert len(trades) == 1
+    assert trades.iloc[0].exit_reason == "END_OF_SAMPLE"

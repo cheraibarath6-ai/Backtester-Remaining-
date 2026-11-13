@@ -145,3 +145,21 @@ def test_metrics_archive_parser_reads_official_snake_case_fields(tmp_path):
     assert "sum_open_interest_value" in metrics.columns
     assert metrics.iloc[-1].sum_open_interest_value == 4_250_000.0
     assert metrics.index.tz is not None
+
+
+
+def test_prepare_bars_resets_indicator_history_after_missing_bucket():
+    raw = _synthetic_raw(2400)
+    missing_minutes = pd.date_range(
+        "2024-01-01 10:00:00", periods=5, freq="1min", tz="UTC"
+    )
+    raw = raw.drop(missing_minutes)
+    bars = prepare_bars(raw, "5m")
+    first_post_gap = pd.Timestamp("2024-01-01 10:10:00", tz="UTC")
+    post = bars.loc[first_post_gap:]
+
+    assert len(post) >= 200
+    assert post.atr.iloc[:13].isna().all()
+    assert np.isfinite(post.atr.iloc[13])
+    assert post.ema200.iloc[:199].isna().all()
+    assert np.isfinite(post.ema200.iloc[199])

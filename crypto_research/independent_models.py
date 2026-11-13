@@ -21,68 +21,34 @@ INDEPENDENT_MODELS = ("M6", "M7", "M8", "M9", "M10", "M11", "M12", "M13", "M14",
 _BAR_CACHE: dict[tuple, pd.DataFrame] = {}
 
 
-def prepare_bars(raw: pd.DataFrame, timeframe: str) -> pd.DataFrame:
-    """Build completed UTC bars and causal indicators from Binance 1-minute OHLCV."""
-    if timeframe not in TIMEFRAME_RULES:
-        raise ValueError(f"Unsupported timeframe: {timeframe}")
-    cache_key = (id(raw), timeframe, len(raw), raw.index.min(), raw.index.max())
-    cached = _BAR_CACHE.get(cache_key)
-    if cached is not None:
-        return cached.copy()
-    if timeframe == "1m":
-        d = raw.copy()
-    else:
-        resampler = raw.resample(TIMEFRAME_RULES[timeframe], label="right", closed="left")
-        minute_count = resampler["close"].count()
-        d = resampler.agg({
-            "open": "first",
-            "high": "max",
-            "low": "min",
-            "close": "last",
-            "volume": "sum",
-            "quote_volume": "sum",
-            "trades": "sum",
-            "taker_buy_base": "sum",
-            "taker_buy_quote": "sum",
-        }).dropna(subset=["open", "high", "low", "close"])
-        expected_minutes = {
-            "3m": 3, "5m": 5, "15m": 15, "30m": 30,
-            "1h": 60, "2h": 120, "4h": 240, "6h": 360,
-            "12h": 720, "1d": 1440,
-        }[timeframe]
-        # Do not turn a partial/missing-minute aggregate into a valid candle.
-        d = d.loc[minute_count.reindex(d.index).fillna(0).eq(expected_minutes)]
-
-    d = d.sort_index().copy()
+def _add_segment_indicators(d: pd.DataFrame) -> pd.DataFrame:
+    """Calculate indicators only within one uninterrupted run of complete bars."""
+    d = d.copy()
     close, high, low = d.close, d.high, d.low
     prev_close = close.shift(1)
-    tr = pd.concat(
-        [high - low, (high - prev_close).abs(), (low - prev_close).abs()],
-        axis=1,
-    ).max(axis=1)
-    d["atr"] = tr.ewm(alpha=1 / 14, adjust=False).mean()
+    tr = pd.concat([high - low, (high - prev_close).abs(), (low - prev_close).abs()], axis=1).max(axis=1)
+    d["atr"] = tr.ewm(alpha=1 / 14, adjust=False, min_periods=14).mean()
 
     delta = close.diff()
-    gain = delta.clip(lower=0).ewm(alpha=1 / 14, adjust=False).mean()
-    loss = (-delta.clip(upper=0)).ewm(alpha=1 / 14, adjust=False).mean()
+    gain = delta.clip(lower=0).ewm(alpha=1 / 14, adjust=False, min_periods=14).mean()
+    loss = (-delta.clip(upper=0)).ewm(alpha=1 / 14, adjust=False, min_periods=14).mean()
     rs = gain / loss.replace(0, np.nan)
     d["rsi"] = 100 - 100 / (1 + rs)
 
     up, down = high.diff(), -low.diff()
     plus_dm = up.where((up > down) & (up > 0), 0.0)
     minus_dm = down.where((down > up) & (down > 0), 0.0)
-    d["plus_di"] = 100 * plus_dm.ewm(alpha=1 / 14, adjust=False).mean() / d.atr.replace(0, np.nan)
-    d["minus_di"] = 100 * minus_dm.ewm(alpha=1 / 14, adjust=False).mean() / d.atr.replace(0, np.nan)
+    d["plus_di"] = 100 * plus_dm.ewm(alpha=1 / 14, adjust=False, min_periods=14).mean() / d.atr.replace(0, np.nan)
+    d["minus_di"] = 100 * minus_dm.ewm(alpha=1 / 14, adjust=False, min_periods=14).mean() / d.atr.replace(0, np.nan)
     dx = 100 * (d.plus_di - d.minus_di).abs() / (d.plus_di + d.minus_di).replace(0, np.nan)
-    d["adx"] = dx.ewm(alpha=1 / 14, adjust=False).mean()
+    d["adx"] = dx.ewm(alpha=1 / 14, adjust=False, min_periods=14).mean()
 
     for span in (5, 12, 20, 26, 34, 50, 100, 200):
-        d[f"ema{span}"] = close.ewm(span=span, adjust=False).mean()
+        d[f"ema{span}"] = close.ewm(span=span, adjust=False, min_periods=span).mean()
 
     d["mom14"] = close - close.shift(14)
     d["volume_ratio"] = d.volume / d.volume.shift(1).rolling(20, min_periods=10).mean()
     d["taker_ratio"] = d.taker_buy_base / d.volume.replace(0, np.nan)
-
     d["bb_mid"] = close.rolling(20, min_periods=20).mean()
     d["bb_std"] = close.rolling(20, min_periods=20).std(ddof=0)
     d["bb_upper"] = d.bb_mid + 2.0 * d.bb_std
@@ -98,15 +64,52 @@ def prepare_bars(raw: pd.DataFrame, timeframe: str) -> pd.DataFrame:
 
     hl2 = (high + low) / 2.0
     d["awesome_oscillator"] = hl2.rolling(5).mean() - hl2.rolling(34).mean()
-    macd_fast = close.ewm(span=12, adjust=False).mean()
-    macd_slow = close.ewm(span=26, adjust=False).mean()
+    macd_fast = close.ewm(span=12, adjust=False, min_periods=12).mean()
+    macd_slow = close.ewm(span=26, adjust=False, min_periods=26).mean()
     d["macd"] = macd_fast - macd_slow
-    d["macd_signal"] = d.macd.ewm(span=9, adjust=False).mean()
+    d["macd_signal"] = d.macd.ewm(span=9, adjust=False, min_periods=9).mean()
     d["macd_hist"] = d.macd - d.macd_signal
+    return d
 
+
+def prepare_bars(raw: pd.DataFrame, timeframe: str) -> pd.DataFrame:
+    """Build complete UTC bars and reset all indicator history after data gaps."""
+    if timeframe not in TIMEFRAME_RULES:
+        raise ValueError(f"Unsupported timeframe: {timeframe}")
+    cache_key = (id(raw), timeframe, len(raw), raw.index.min(), raw.index.max())
+    cached = _BAR_CACHE.get(cache_key)
+    if cached is not None:
+        return cached.copy()
+    if timeframe == "1m":
+        d = raw.copy()
+    else:
+        resampler = raw.resample(TIMEFRAME_RULES[timeframe], label="right", closed="left")
+        minute_count = resampler["close"].count()
+        d = resampler.agg({
+            "open": "first", "high": "max", "low": "min", "close": "last",
+            "volume": "sum", "quote_volume": "sum", "trades": "sum",
+            "taker_buy_base": "sum", "taker_buy_quote": "sum",
+        }).dropna(subset=["open", "high", "low", "close"])
+        expected_minutes = {
+            "3m": 3, "5m": 5, "15m": 15, "30m": 30, "1h": 60,
+            "2h": 120, "4h": 240, "6h": 360, "12h": 720, "1d": 1440,
+        }[timeframe]
+        # Partial candles are invalid; their removal creates a visible segment break.
+        d = d.loc[minute_count.reindex(d.index).fillna(0).eq(expected_minutes)]
+
+    d = d.sort_index().copy()
+    if d.empty:
+        return d
+    if not d.index.is_monotonic_increasing or d.index.has_duplicates:
+        raise ValueError("Raw bars must have a strictly increasing, duplicate-free index")
+    bar_delta = pd.Timedelta(TIMEFRAME_RULES[timeframe])
+    segment_ids = d.index.to_series().diff().ne(bar_delta).cumsum()
+    d = pd.concat([
+        _add_segment_indicators(segment.copy())
+        for _, segment in d.groupby(segment_ids, sort=False)
+    ]).sort_index()
     _BAR_CACHE[cache_key] = d
     return d.copy()
-
 
 def _set_atr_stops(d: pd.DataFrame, long: pd.Series, short: pd.Series, multiple: float):
     d.loc[long, "signal"] = 1
@@ -180,7 +183,9 @@ def make_independent_signals(
         if benchmark_raw is None:
             raise ValueError(f"{model} requires BTC benchmark candles")
         benchmark = prepare_bars(benchmark_raw, timeframe)
-        btc_close = benchmark.close.reindex(d.index, method="ffill")
+        btc_close = benchmark.close.reindex(
+            d.index, method="ffill", tolerance=pd.Timedelta(TIMEFRAME_RULES[timeframe])
+        )
         if model == "M10":
             lookback = 20
             relative = d.close.pct_change(lookback) - btc_close.pct_change(lookback)

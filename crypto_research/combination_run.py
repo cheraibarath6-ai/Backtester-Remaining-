@@ -139,6 +139,7 @@ def main():
                     rr=profile["rr"],
                     max_hold_bars=max_hold_bars,
                     trailing_atr_multiple=profile.get("trailing_atr_multiple"),
+                    expected_end=args.end,
                 )
                 base = {
                     "model": model, "variant": variant, "symbol": symbol, "timeframe": args.timeframe,
