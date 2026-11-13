@@ -12,6 +12,10 @@
 - One-factor-at-a-time variants: 406 result rows and 228,889 trade-ledger rows. All seven symbol jobs and the aggregate job completed successfully.
 - M6 and M11 are evaluated independently. No ensemble or cross-model agreement is used. M3 was not included or modified.
 
+## Supersession warning — data-gap correction
+
+These first sensitivity figures were generated before the newly discovered missing-bar execution issue was fixed. SOLUSDT and XRPUSDT each had 7,200 missing 1-minute candles. The previous executor could carry an open position across such an interval without observing stop/target touches. The gap-safe executor now closes any affected position with an auditable `DATA_GAP` marker, excludes that record from performance statistics, skips stale pre-gap signals, and records exact missing intervals. The regression suite for this change passed. The gap-safe full screen, sensitivity rerun and combination run are underway. **All performance figures below are preliminary and must be superseded by those gap-safe artifacts before model selection.**
+
 PF below is shown both as net-bps PF and R-based PF. Net-R sums are trade-level sums across separate symbol streams, not a capital-weighted portfolio return. Drawdown is the worst individual-symbol drawdown at a fixed 1% of initial equity risk per R; it is not a combined portfolio drawdown.
 
 ## M6 Donchian — 4h
