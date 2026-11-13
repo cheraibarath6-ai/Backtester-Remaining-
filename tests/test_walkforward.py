@@ -71,3 +71,14 @@ def test_walkforward_profile_universe_is_independent_and_contains_no_m3():
     assert {p["variant"] for p in combination_profiles("M6")}
     assert {p["variant"] for p in combination_profiles("M11")}
     assert all("M3" not in p["variant"] for model in ("M6", "M11") for p in combination_profiles(model))
+
+def test_year_window_keeps_first_complete_right_labelled_bar_after_boundary():
+    # A 4h bar labelled 04:00 represents [00:00, 04:00); it is fully
+    # inside the test year and may signal an entry at the 04:00 next-bar open.
+    index = pd.date_range("2023-01-01 04:00", periods=4, freq="4h", tz="UTC")
+    signals = pd.DataFrame({"signal": [1, -1, 1, -1]}, index=index)
+
+    window = build_test_year_window(signals, "2023-01-01", "2023-01-02")
+
+    assert window.index[0] == pd.Timestamp("2023-01-01 04:00", tz="UTC")
+    assert window.signal.iloc[0] == 1
