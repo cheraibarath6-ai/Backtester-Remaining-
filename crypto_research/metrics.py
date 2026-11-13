@@ -109,6 +109,8 @@ def acquire_open_interest(symbol, start, end, root=Path("data")) -> pd.DataFrame
 
     try:
         available_days = _list_metric_archive_days(symbol)
+        if not available_days:
+            raise RuntimeError("Binance Vision S3 listing returned no metric archive keys")
     except Exception:
         # S3 listing is an index optimisation only; fall back to daily key probes.
         available_days = [
