@@ -1,107 +1,124 @@
-# M6 / M11 One-Factor Sensitivity Results — 13 November 2026
+# Gap-safe M6/M11 One-Factor Sensitivity — 13 November 2026
 
-## Scope and reproducibility
+## Provenance
 
-- Workflow: https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43429571954
-- Aggregate artifact: [independent-m6-m11-sensitivity-results](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43429571954/artifacts/14046160714)
-- Commit: `1a2d02c856992807ec04126f1689e33722f1d954`
-- Seven Binance USD-M symbols: BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT, XRPUSDT, ADAUSDT, DOGEUSDT.
-- Period: 2021-01-01 through 2026-10-31.
-- Timeframes: 1h and 4h.
-- Costs: 5 bps fee and 2 bps slippage per side; official Binance funding cashflows charged to every open perpetual position at settlement.
-- One-factor-at-a-time variants: 406 result rows and 228,889 trade-ledger rows. All seven symbol jobs and the aggregate job completed successfully.
-- M6 and M11 are evaluated independently. No ensemble or cross-model agreement is used. M3 was not included or modified.
+- Branch: research/funding-notional-audit-v2
+- Gap-safe sensitivity workflow: [43447250657](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43447250657)
+- Aggregate artifact: [14056180913](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43447250657/artifacts/14056180913)
+- Seven Binance USD-M symbols: BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT, XRPUSDT, ADAUSDT, DOGEUSDT
+- Period: 2021-01-01 through 2026-11-01 exclusive
+- Timeframes: 1h and 4h; both directions
+- Baseline costs: 5 bps fee and 2 bps slippage per side, plus official Binance funding cashflows at settlement
+- 406 one-factor result rows and 228,889 trade-ledger rows; all seven symbol jobs and aggregation completed successfully
 
-## Supersession warning — data-gap correction
+This report supersedes the earlier pre-gap sensitivity figures. The executor now invalidates positions crossing missing-bar intervals as DATA_GAP, keeps those records in audit ledgers, excludes them from metrics, skips stale signals after gaps and resets indicator/VWAP/OI/benchmark histories at segment boundaries. The full screen ledger retained 54 DATA_GAP records across the seven symbols; these are excluded from performance metrics. M3 remains untouched.
 
-These first sensitivity figures were generated before the newly discovered missing-bar execution issue was fixed. SOLUSDT and XRPUSDT each had 7,200 missing 1-minute candles. The previous executor could carry an open position across such an interval without observing stop/target touches. The gap-safe executor now closes any affected position with an auditable `DATA_GAP` marker, excludes that record from performance statistics, skips stale pre-gap signals, and records exact missing intervals. The regression suite for this change passed. The gap-safe full screen, sensitivity rerun and combination run are underway. **All performance figures below are preliminary and must be superseded by those gap-safe artifacts before model selection.**
+## Metrics interpretation
 
-PF below is shown both as net-bps PF and R-based PF. Net-R sums are trade-level sums across separate symbol streams, not a capital-weighted portfolio return. Drawdown is the worst individual-symbol drawdown at a fixed 1% of initial equity risk per R; it is not a combined portfolio drawdown.
+- Net-bps PF = sum of positive trade net-bps divided by the absolute sum of negative trade net-bps.
+- R PF = the same calculation using initial-risk-normalized net-R.
+- Net-R sums and the corresponding 1%-risk fixed-initial-equity return are sums across independent symbol streams, not portfolio returns.
+- Worst drawdown is the worst individual-symbol drawdown under 1% initial-equity risk per R. It is not a combined portfolio drawdown.
+- Average holding time is shown in hours.
 
-## M6 Donchian — 4h
+## M6 Donchian — 4h one-factor results
 
-| Variant | Trades | PF (net bps) | PF (R) | Net-R | Win % | Avg hold | Worst per-symbol DD |
+| Variant | Trades | Net-bps PF | R PF | Net-R | Win % | Avg hold | Worst symbol DD |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| 24h baseline | 2,373 | 1.1438 | 1.1392 | +99.543 | 45.85 | 22.08h | -11.31% |
-| 48h hold | 2,108 | 1.1920 | 1.2122 | +168.471 | 45.59 | 38.49h | -11.81% |
-| 72h hold | 1,994 | 1.1454 | 1.1454 | +129.047 | 43.98 | 51.19h | -16.66% |
-| 168h hold | 1,812 | 1.1438 | 1.1594 | +160.396 | 41.72 | 80.34h | -18.57% |
-| Donchian 100 | 1,649 | 1.1425 | 1.1807 | +92.431 | 45.91 | 21.90h | -11.61% |
-| RR 3 | 2,314 | 1.1735 | 1.1833 | +126.301 | 46.20 | 22.54h | -11.48% |
+| Baseline | 2,373 | 1.096 | 1.139 | +99.56 | 45.85 | 22.1h | -11.31% |
+| Donchian 20 | 4,203 | 0.977 | 1.044 | +53.43 | 43.94 | 22.4h | -18.85% |
+| Donchian 100 | 1,649 | 1.143 | 1.181 | +92.45 | 45.91 | 21.9h | -11.61% |
+| ATR stop 2.0 | 2,466 | 1.080 | 1.128 | +117.08 | 44.77 | 20.6h | -12.85% |
+| ATR stop 3.0 | 2,338 | 1.118 | 1.158 | +93.43 | 46.49 | 22.8h | -11.38% |
+| Volume floor 0.8 | 2,439 | 1.077 | 1.120 | +88.59 | 45.43 | 22.1h | -12.21% |
+| Volume floor 1.2 | 2,264 | 1.100 | 1.152 | +102.76 | 45.72 | 22.1h | -11.18% |
+| RR 1.5 | 2,477 | 1.061 | 1.106 | +79.70 | 45.78 | 21.4h | -13.06% |
+| RR 3.0 | 2,314 | 1.174 | 1.183 | +126.32 | 46.20 | 22.5h | -11.48% |
+| Hold 48h | 2,107 | 1.190 | 1.211 | +167.33 | 45.56 | 38.5h | -11.81% |
+| Hold 72h | 1,993 | 1.147 | 1.145 | +128.49 | 43.95 | 51.2h | -16.66% |
+| Hold 168h | 1,811 | 1.146 | 1.161 | +161.43 | 41.74 | 80.3h | -18.57% |
+| ATR trail 2.5 | 2,288 | 1.068 | 1.104 | +67.61 | 44.27 | 21.2h | -10.58% |
 
-### M6 period breakdown
+### M6 chronological breakdown
 
-The 168h variant was positive in every reported year:
+| Variant | Period | Trades | Net-bps PF | R PF | Net-R |
+|---|---|---:|---:|---:|---:|
+| Baseline | 2021–24 development | 1,585 | 1.122 | 1.163 | +77.38 |
+|  | 2025 validation | 425 | 1.054 | 1.204 | +25.22 |
+|  | 2026 retrospective | 363 | 0.978 | 0.974 | -3.03 |
+| Hold 48h | 2021–24 development | 1,421 | 1.259 | 1.271 | +140.07 |
+|  | 2025 validation | 364 | 1.099 | 1.241 | +33.76 |
+|  | 2026 retrospective | 323 | 0.919 | 0.953 | -6.51 |
+| Hold 168h | 2021–24 development | 1,216 | 1.172 | 1.172 | +115.37 |
+|  | 2025 validation | 319 | 1.075 | 1.186 | +32.64 |
+|  | 2026 retrospective | 277 | 1.075 | 1.086 | +13.41 |
+| RR 3.0 | 2021–24 development | 1,547 | 1.207 | 1.214 | +97.99 |
+|  | 2025 validation | 415 | 1.148 | 1.266 | +32.00 |
+|  | 2026 retrospective | 352 | 0.987 | 0.967 | -3.67 |
 
-| Year | Trades | PF (R) | Net-R |
-|---|---:|---:|---:|
-| 2021 | 298 | 1.3260 | +51.979 |
-| 2022 | 310 | 1.1968 | +32.279 |
-| 2023 | 299 | 1.0529 | +9.341 |
-| 2024 | 309 | 1.1195 | +20.742 |
-| 2025 | 319 | 1.1857 | +32.643 |
-| 2026 YTD | 277 | 1.0856 | +13.413 |
+The 48h hold variant is the strongest development/2025 one-factor result, with more trades and better net-R than the baseline. Its 2026 retrospective result is negative, so it cannot be promoted using that period. The 168h variant had a positive 2026 retrospective result but requires about 80 hours average holding and has a materially worse historical worst-symbol drawdown. Do not choose between them using 2026; the broad sweep included that period.
 
-The 48h variant had stronger development plus 2025 results (+172.919R versus +144.926R for 168h), but its 2026 result was -4.449R. The 168h variant's 2026 result was +15.470R. Therefore the 48h variant is the in-period development/validation leader, while 168h is the more stable-looking later-period candidate. Do not select between them using 2026: the full sensitivity sweep included all periods, so 2026 is now a retrospective audit period, not a pristine untouched holdout.
+M6 at 1h is not robust: the best R PF is only about 1.007 (hold 168h), net-bps PF is below 1, and the worst-symbol drawdown is about -60.6%. The 4h horizon is the only credible M6 research timeframe in this screen.
 
-The 168h variant's average holding time is about 80 hours. Its longer duration is a material capital-utilization and funding-exposure trade-off. Its 2026 per-symbol results were mixed, not uniformly positive. The 48h variant had a materially worse 2026 aggregate despite better earlier-period metrics.
+## M11 open-interest pressure — 4h one-factor results
 
-## M11 open-interest pressure — 4h
-
-| Variant | Trades | PF (net bps) | PF (R) | Net-R | Win % | Avg hold | Worst per-symbol DD |
+| Variant | Trades | Net-bps PF | R PF | Net-R | Win % | Avg hold | Worst symbol DD |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| 24h baseline | 670 | 1.2678 | 1.2348 | +48.956 | 49.10 | 21.58h | -12.38% |
-| 48h hold | 622 | 1.2404 | 1.2374 | +61.733 | 45.66 | 36.07h | -14.57% |
-| 72h hold | 597 | 1.1760 | 1.1818 | +54.779 | 43.22 | 45.69h | -11.49% |
-| 168h hold | 566 | 1.1721 | 1.1634 | +56.422 | 40.46 | 61.27h | -12.74% |
-| RR 3 | 665 | 1.2918 | 1.2807 | +58.147 | 49.17 | 22.14h | -14.83% |
-| OI threshold 0.5% | 747 | 1.2703 | 1.2351 | +53.948 | 49.26 | 21.58h | -11.67% |
-| Price threshold 0.25% | 710 | 1.2814 | 1.2435 | +53.700 | 49.44 | 21.64h | -10.77% |
+| Baseline | 670 | 1.268 | 1.235 | +48.96 | 49.10 | 21.6h | -12.38% |
+| OI lookback 6 | 631 | 1.185 | 1.155 | +30.45 | 49.13 | 21.7h | -12.22% |
+| OI lookback 24 | 682 | 1.191 | 1.220 | +46.50 | 48.24 | 21.4h | -9.04% |
+| OI threshold 0.5% | 747 | 1.270 | 1.235 | +53.95 | 49.26 | 21.6h | -11.67% |
+| OI threshold 1.5% | 617 | 1.224 | 1.206 | +40.79 | 48.78 | 21.4h | -10.72% |
+| Price threshold 0.25% | 710 | 1.281 | 1.244 | +53.70 | 49.44 | 21.6h | -10.77% |
+| Price threshold 1.0% | 571 | 1.209 | 1.168 | +31.09 | 47.64 | 21.5h | -12.48% |
+| Taker threshold 0.52 | 3,598 | 0.972 | 0.976 | -28.41 | 40.02 | 21.8h | -92.69% |
+| Taker threshold 0.60 | 17 | 0.186 | 0.257 | -5.71 | 35.29 | 21.4h | -2.42% |
+| ATR stop 1.5 | 687 | 1.175 | 1.161 | +44.09 | 47.16 | 19.7h | -14.94% |
+| ATR stop 2.5 | 662 | 1.303 | 1.267 | +44.76 | 49.55 | 22.7h | -11.39% |
+| RR 1.5 | 678 | 1.194 | 1.173 | +36.05 | 49.41 | 20.9h | -12.80% |
+| RR 3.0 | 665 | 1.292 | 1.281 | +58.15 | 49.17 | 22.1h | -14.83% |
+| Hold 48h | 622 | 1.240 | 1.237 | +61.73 | 45.66 | 36.1h | -14.57% |
+| Hold 72h | 597 | 1.176 | 1.182 | +54.78 | 43.22 | 45.7h | -11.49% |
+| Hold 168h | 566 | 1.172 | 1.163 | +56.42 | 40.46 | 61.3h | -12.74% |
 
-### M11 period breakdown
+### M11 chronological breakdown
 
-The 48h variant was positive in all six calendar-year groups, but 2021 has only six trades and is not meaningful:
+| Variant | Period | Trades | Net-bps PF | R PF | Net-R |
+|---|---|---:|---:|---:|---:|
+| Baseline | 2021–24 development | 314 | 1.335 | 1.352 | +33.49 |
+|  | 2025 validation | 156 | 1.280 | 1.245 | +11.33 |
+|  | 2026 retrospective | 200 | 1.159 | 1.062 | +4.13 |
+| Hold 48h | 2021–24 development | 292 | 1.323 | 1.349 | +40.93 |
+|  | 2025 validation | 145 | 1.203 | 1.234 | +13.89 |
+|  | 2026 retrospective | 185 | 1.145 | 1.083 | +6.90 |
+| RR 3.0 | 2021–24 development | 312 | 1.387 | 1.447 | +42.13 |
+|  | 2025 validation | 155 | 1.330 | 1.290 | +13.38 |
+|  | 2026 retrospective | 198 | 1.125 | 1.039 | +2.63 |
+| OI threshold 0.5% | 2021–24 development | 352 | 1.336 | 1.353 | +37.08 |
+|  | 2025 validation | 172 | 1.295 | 1.276 | +13.71 |
+|  | 2026 retrospective | 223 | 1.156 | 1.042 | +3.17 |
+| Price threshold 0.25% | 2021–24 development | 336 | 1.329 | 1.353 | +35.79 |
+|  | 2025 validation | 162 | 1.275 | 1.231 | +11.19 |
+|  | 2026 retrospective | 212 | 1.214 | 1.095 | +6.72 |
 
-| Year | Trades | PF (R) | Net-R |
-|---|---:|---:|---:|
-| 2021 | 6 | 4.6716 | +4.502 |
-| 2022 | 98 | 1.3845 | +14.168 |
-| 2023 | 103 | 1.3843 | +16.799 |
-| 2024 | 85 | 1.1543 | +5.465 |
-| 2025 | 145 | 1.2335 | +13.894 |
-| 2026 YTD | 185 | 1.0829 | +6.904 |
+M11 at 4h is the strongest current standalone research candidate. Its baseline and the OI-threshold, price-threshold, RR3 and 48h variants all have positive development and 2025 net-bps PF and R PF. The 48h and RR3 variants increase net-R but worsen the worst-symbol drawdown versus some threshold variants. M11 at 1h is weak: only RR3 is marginally positive (PF about 1.005 net-bps / 1.004 R) with a worst-symbol drawdown around -45%; other tested 1h variants are negative.
 
-The 48h hold increased net-R versus the 24h baseline, but also increased worst individual-symbol drawdown from -12.38% to -14.57% at the fixed 1% risk convention. The 2026 per-symbol distribution was mixed: five of seven symbols were positive; BNB and ETH were negative. The baseline had only three positive symbols in 2026.
+M11 is strictly OI-pressure-only. It uses official open-interest metrics and taker-buy ratio, not a historical liquidation-event tape. Do not label it a liquidation-pressure engine.
 
-M11 uses OI change, price change and taker-buy ratio. It is an **open-interest pressure** model, not a liquidation-pressure model. No complete historical Binance liquidation-event tape was used.
+## Data quality and cost assumptions
 
-## Cost sensitivity (indicative only)
+- 1m candles: official Binance Vision USD-M archives.
+- BTC: 100% minute coverage; official OI history from 2021-01-01, about 99.902% coverage.
+- ETH, BNB, ADA, DOGE: 100% minute coverage; OI metrics begin 2021-12-01, about 84.3% coverage over the full 2021–2026 range.
+- SOL and XRP: each has two 1-hour missing-minute intervals (7,200 minutes total); the gap-safe executor invalidates affected positions and excludes DATA_GAP records from metrics.
+- Funding: official Binance Vision monthly funding archives, no missing archive months in the scored historical screen. Funding is applied to every open perpetual position, regardless of strategy.
+- Costs: 5 bps taker fee and 2 bps slippage per side.
 
-A ledger-based additional-cost haircut was applied to the completed trades; this is not a second full OHLC execution rerun. It estimates the effect of increasing fees from 5 to 7.5 bps per side and slippage from 2 to 4 bps per side, then to 10/5 bps per side.
+## Next research steps
 
-| Variant | Base PF-R / Net-R | Approx. 7.5/4 PF-R / Net-R | Approx. 10/5 PF-R / Net-R |
-|---|---:|---:|---:|
-| M6 168h | 1.159 / +160.40R | 1.126 / +129.15R | 1.101 / +104.84R |
-| M11 48h | 1.237 / +61.73R | 1.156 / +42.11R | 1.096 / +26.86R |
-| M11 24h baseline | 1.235 / +48.96R | 1.126 / +27.56R | 1.048 / +10.91R |
+1. Finish the within-model M6/M11 combinations; do not combine M6 and M11.
+2. Complete the new full OHLC cost-stress workflow at 5/2, 7.5/3, 10/5 and 15/10 bps per side, with moving-block bootstrap diagnostics. The prior ledger-repricing table is only indicative and is superseded by this full re-execution.
+3. Continue annual chronological diagnostics and a properly funded forward holdout after 2026-11-01. Binance's November monthly funding archive is not yet available; the REST endpoint is region-restricted and attempted daily funding archives returned 404, so the forward runner currently gates scoring instead of assuming zero funding.
+4. Require positive net-bps PF and R PF on 2021–2024 development and 2025 validation, adequate trade count, reasonable drawdown and robustness under stressed costs before promoting any candidate.
 
-This haircut uses recorded entry/exit prices and initial stops to estimate incremental cost in R. It does not replace a full re-execution with stressed slippage and fees. Full cost-stress runs remain required before selection.
-
-## Data quality
-
-- Candles: official Binance Vision USD-M 1m archives. BTC, ETH, BNB, ADA and DOGE had 100% minute coverage. SOL and XRP each had 99.7653% coverage (7,200 missing minutes) and need gap-interval inspection before final selection.
-- Funding: official Binance Vision monthly archive; no missing archive months; maximum observed interval approximately 8 hours. Funding is applied to all perpetual positions, independent of model.
-- OI: official Binance daily metrics. BTC coverage was 99.902% from 2021-01-01. The other six symbols began 2021-12-01, yielding about 84.3% coverage across the full 2021-2026 window; there were no missing archive days after each symbol's available start.
-- No historical liquidation-event series was available. Do not substitute OI change for liquidations.
-
-## Decision and next tests
-
-No model is approved for deployment.
-
-- M6 4h: keep 48h and 168h as separate candidates. Test the predeclared within-M6 combinations and additional 120h/144h/192h hold variants. Do not choose using the retrospective 2026 result.
-- M11 4h: keep the 24h baseline and 48h hold as separate candidates; test predeclared combinations of OI threshold, price threshold, RR and holding horizon. 48h improves net-R but worsens worst-symbol drawdown.
-- Next workflow: [M6/M11 combination research](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43444627475).
-- Corrected all-model screen: [Independent Core Engine Discovery](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43444488687). It must finish and its artifacts must be inspected before any full model comparison.
-- A genuinely untouched forward holdout must begin after 2026-11-01; the already-screened 2026 data must not be reused as if it were unseen.
-
-M3 remains untouched.
+No model is approved for live trading. Cross-symbol aggregates are not portfolio returns. M3 remains untouched.
