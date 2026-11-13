@@ -82,8 +82,8 @@ def test_daily_kline_archive_parser_handles_header_and_official_usdm_columns(tmp
     timestamp = int(pd.Timestamp("2026-11-01 00:00:00", tz="UTC").timestamp() * 1000)
     csv = (
         "open_time,open,high,low,close,volume,close_time,quote_asset_volume,"
-        "number_of_trades,taker_buy_base_asset_volume,taker_buy_quote_asset_volume,ignore\\n"
-        f"{timestamp},100,102,99,101,12,{timestamp + 59999},1212,25,7,707,0\\n"
+        "number_of_trades,taker_buy_base_asset_volume,taker_buy_quote_asset_volume,ignore\n"
+        f"{timestamp},100,102,99,101,12,{timestamp + 59999},1212,25,7,707,0\n"
     )
     path = tmp_path / "ETHUSDT-1m-2026-11-01.zip"
     _write_zip(path, "ETHUSDT-1m-2026-11-01.csv", csv)
@@ -98,9 +98,9 @@ def test_daily_kline_archive_parser_handles_header_and_official_usdm_columns(tmp
 
 def test_daily_metrics_parser_shifts_post_june_2026_oi_to_availability_time(tmp_path):
     csv = (
-        "create_time,symbol,sum_open_interest,sum_open_interest_value\\n"
-        "2026-11-01 00:00:00,ETHUSDT,12.5,1000000\\n"
-        "2026-06-24 23:55:00,ETHUSDT,11.5,900000\\n"
+        "create_time,symbol,sum_open_interest,sum_open_interest_value\n"
+        "2026-11-01 00:00:00,ETHUSDT,12.5,1000000\n"
+        "2026-06-24 23:55:00,ETHUSDT,11.5,900000\n"
     )
     path = tmp_path / "ETHUSDT-metrics-2026-11-01.zip"
     _write_zip(path, "ETHUSDT-metrics-2026-11-01.csv", csv)
