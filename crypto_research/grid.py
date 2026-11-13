@@ -69,7 +69,7 @@ def _bars(raw,tf):
     mdi=100*mdm.ewm(alpha=1/14,adjust=False).mean()/d.atr.replace(0,np.nan)
     dx=100*(pdi-mdi).abs()/(pdi+mdi).replace(0,np.nan)
     d["adx"]=dx.ewm(alpha=1/14,adjust=False).mean(); d["pdi"]=pdi; d["mdi"]=mdi
-    for n in (10,20,30,50,100,200): d[f"ema{n}"]=c.ewm(span=n,adjust=False).mean()
+    for n in (8,10,15,20,30,50,75,100,150,200): d[f"ema{n}"]=c.ewm(span=n,adjust=False).mean()
     d["taker_ratio"]=d.taker_buy_base/d.volume.replace(0,np.nan)
     d["volume_ratio"]=d.volume/d.volume.shift(1).rolling(20,min_periods=10).mean()
     _BAR_CACHE[key]=d
