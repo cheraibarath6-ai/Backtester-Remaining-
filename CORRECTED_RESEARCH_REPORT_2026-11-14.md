@@ -162,7 +162,7 @@ The original 24h M6/M11 screen profiles were added to the within-model profile u
 - [Updated within-model combination PR run 43503121351](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43503121351): pending at the last inspection; job creation had not yet completed.
 - The new [expanding-window walk-forward workflow](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/workflows/m6-m11-walkforward.yml) is on the branch. Its execution/artifacts are not yet verified here.
 
-The latest branch comparison against `main` is 84 commits ahead across 34 changed files. The compare response contains **no M3 path**. All research changes remain confined to the independent-engine research, data/accounting, tests, reports and workflow files.
+The latest branch comparison against `main` is 101 commits ahead across 33 changed files. The compare response contains **no M3 path**. All research changes remain confined to the independent-engine research, data/accounting, tests, reports and workflow files.
 
 
 ## Latest Actions verification after baseline inclusion
