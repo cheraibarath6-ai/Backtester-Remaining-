@@ -2,7 +2,7 @@ name: Independent Core Engine Discovery
 
 on:
   push:
-    branches: [main]
+    branches: [main, research/funding-notional-audit-v2]
     paths:
       - ".github/workflows/independent-discovery.yml"
       - "crypto_research/backtest.py"
