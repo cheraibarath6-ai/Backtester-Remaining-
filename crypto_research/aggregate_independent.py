@@ -76,15 +76,24 @@ def main():
             metadata.append({"source": str(path), "error": str(error)})
     (out / "data_and_run_quality.json").write_text(json.dumps(metadata, indent=2, default=str))
 
-    eligible = pd.DataFrame()
+    development_positive = pd.DataFrame()
+    development_and_validation_positive = pd.DataFrame()
     if not results.empty:
-        eligible = results[
+        development_positive = results[
             (results.status == "COMPLETED")
-            & (pd.to_numeric(results.trades, errors="coerce").fillna(0) >= 100)
-            & (pd.to_numeric(results.profit_factor, errors="coerce") > 1.0)
-            & (pd.to_numeric(results.net_R, errors="coerce") > 0)
+            & (pd.to_numeric(results.development_trades, errors="coerce").fillna(0) >= 100)
+            & (pd.to_numeric(results.development_profit_factor, errors="coerce") > 1.0)
+            & (pd.to_numeric(results.development_net_R, errors="coerce") > 0)
         ].copy()
-        eligible.to_csv(out / "initial_positive_candidates.csv", index=False)
+        development_positive.to_csv(out / "development_positive_candidates.csv", index=False)
+        development_and_validation_positive = development_positive[
+            (pd.to_numeric(development_positive.validation_2025_trades, errors="coerce").fillna(0) >= 50)
+            & (pd.to_numeric(development_positive.validation_2025_profit_factor, errors="coerce") > 1.0)
+            & (pd.to_numeric(development_positive.validation_2025_net_R, errors="coerce") > 0)
+        ].copy()
+        development_and_validation_positive.to_csv(
+            out / "development_and_2025_positive_candidates.csv", index=False
+        )
 
     report = [
         "# Independent Core Engine Screening",
@@ -94,13 +103,14 @@ def main():
         f"- Result rows: {len(results)}",
         f"- Yearly result rows: {len(yearly)}",
         f"- Trade ledger rows: {len(trades)}",
-        f"- Initial positive candidates (PF > 1, net-R > 0, 100+ trades per stream): {len(eligible)}",
+        f"- Development-positive candidates (PF > 1, net-R > 0, 100+ trades): {len(development_positive)}",
+        f"- Development plus 2025 validation positive: {len(development_and_validation_positive)}",
         "",
         "## Important interpretation",
         "",
         "- Each model is tested independently. Cross-symbol aggregation below is within the same model only.",
         "- same_model_cross_symbol_trade_summary.csv reports trade-level PF and net-R sums; it is not a capital-weighted portfolio return or drawdown.",
-        "- Year 2021-2024 is development, 2025 is validation, and 2026 YTD is a later holdout slice. Do not optimise against the holdout.",
+        "- Candidate screening uses 2021-2024 development and 2025 validation only. 2026 YTD is reported as a later holdout and must not be used for selection.",
         "- M11 is marked data-gated if historical open-interest metrics are missing; no price-only OI proxy is substituted.",
         "- M3 is excluded and untouched.",
         "",
