@@ -114,10 +114,10 @@ def _evaluate(
     yearly = _year_rows(trades, base)
     development = _period_summary(trades, 2021, 2024)
     validation = _period_summary(trades, 2025, 2025)
-    holdout = _period_summary(trades, 2026, 2026)
+    retrospective = _period_summary(trades, 2026, 2026)
     stats.update({f"development_{key}": value for key, value in development.items()})
     stats.update({f"validation_2025_{key}": value for key, value in validation.items()})
-    stats.update({f"holdout_2026_{key}": value for key, value in holdout.items()})
+    stats.update({f"retrospective_2026_{key}": value for key, value in retrospective.items()})
     return stats, trades, yearly
 
 

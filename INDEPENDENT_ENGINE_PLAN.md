@@ -41,7 +41,7 @@ M10 and M13 use BTC only as a reference series; BTC is not traded by those two m
 
 - 2021-2024: development period.
 - 2025: validation period.
-- 2026 through October: later holdout; it must not be used to select parameters.
+- 2026 through October: retrospective audit evidence because it was included in broad parameter sweeps; it is not a pristine untouched holdout and must not be used to select parameters.
 - First-pass positive candidates require at least 100 development trades, development PF > 1 and positive development net-R. Stronger candidates also need at least 50 trades in 2025 with PF > 1 and positive net-R.
 - A candidate still needs factor sensitivity, cost stress, yearly consistency and further untouched validation before it can be considered a surviving engine. A positive single stream is not enough to establish robustness.
 

@@ -204,7 +204,7 @@ def main():
         "",
         "- Each model is tested independently. Cross-symbol aggregation below is within the same model only.",
         "- same_model_cross_symbol_trade_summary.csv reports trade-level PF and net-R sums; it is not a capital-weighted portfolio return or drawdown.",
-        "- Candidate screening uses 2021-2024 development and 2025 validation only. 2026 YTD is reported as a later holdout and must not be used for selection.",
+        "- Candidate screening uses 2021-2024 development and 2025 validation only. 2026 YTD is retrospective audit evidence because it was included in broad sweeps; it is not a pristine untouched holdout and must not be used for selection.",
         "- M11 is marked data-gated if historical open-interest metrics are missing; no price-only OI proxy is substituted.",
         "- M3 is excluded and untouched.",
         "",

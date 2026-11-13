@@ -173,7 +173,7 @@ def main():
                     years = yearly_rows(trades, base)
                     stats.update({f"development_{k}": v for k, v in period_summary(trades, 2021, 2024).items()})
                     stats.update({f"validation_2025_{k}": v for k, v in period_summary(trades, 2025, 2025).items()})
-                    stats.update({f"holdout_2026_{k}": v for k, v in period_summary(trades, 2026, 2026).items()})
+                    stats.update({f"retrospective_2026_{k}": v for k, v in period_summary(trades, 2026, 2026).items()})
 
                 row = {
                     "model": model,

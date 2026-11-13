@@ -157,7 +157,7 @@ def main():
                     ledgers.append(trades)
                 dev = _period_summary(trades, 2021, 2024)
                 val = _period_summary(trades, 2025, 2025)
-                hold = _period_summary(trades, 2026, 2026)
+                retrospective = _period_summary(trades, 2026, 2026)
                 stats = summarize(trades)
                 stats.update({
                     "status": "COMPLETED",
@@ -169,7 +169,7 @@ def main():
                     "parameters_json": json.dumps(profile["parameters"], sort_keys=True),
                     **{f"development_{k}": v for k, v in dev.items()},
                     **{f"validation_2025_{k}": v for k, v in val.items()},
-                    **{f"holdout_2026_{k}": v for k, v in hold.items()},
+                    **{f"retrospective_2026_{k}": v for k, v in retrospective.items()},
                 })
                 result_rows.append({**base, **stats})
                 yearly.extend(_yearly_rows(trades, base))
