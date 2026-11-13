@@ -25,7 +25,10 @@ def run_backtest(
     the conservative stop-first rule is used. An optional ATR trailing stop is
     updated only after a completed bar and can trigger from the following bar.
     Funding cashflows apply to every USD-M perpetual position held across a
-    funding timestamp, regardless of which model generated the signal.
+    funding timestamp, regardless of which model generated the signal. A
+    settlement exactly at entry/exit time is ordering-ambiguous at OHLC
+    resolution, so only its adverse cashflow is charged; favorable boundary
+    credits are not assumed. Strictly interior settlements use the signed rate.
     """
     bar_minutes = {
         "1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30,
@@ -98,9 +101,18 @@ def run_backtest(
                         marks[j] = closes[bar_i] if bar_i >= 0 else position["entry"]
                 valid = np.isfinite(rates) & np.isfinite(marks) & (marks > 0)
                 if valid.any():
-                    fund_cost = float(np.sum(
-                        side * rates[valid] * marks[valid] / position["entry"]
-                    ))
+                    event_times = funding_index[first:last][valid]
+                    cashflows = side * rates[valid] * marks[valid] / position["entry"]
+                    # OHLC data cannot order a funding event that shares the
+                    # exact entry/exit timestamp with the fill. Charge a
+                    # possible adverse payment, but never assume an ambiguous
+                    # favorable credit. Interior settlements are unambiguous.
+                    boundary = (
+                        (event_times == position["entry_time"])
+                        | (event_times == ts)
+                    )
+                    cashflows[boundary] = np.maximum(cashflows[boundary], 0.0)
+                    fund_cost = float(np.sum(cashflows))
 
         net = gross - fees - fund_cost
         risk = abs(position["entry"] - position.get("initial_stop", position["stop"])) / position["entry"]

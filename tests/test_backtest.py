@@ -341,3 +341,60 @@ def test_period_cohort_uses_entry_time_and_requires_exit_before_period_end():
     assert cohort.net_R.tolist() == [1.0, 0.5]
     assert all(pd.to_datetime(cohort.entry_time, utc=True).dt.year == 2025)
     assert (pd.to_datetime(cohort.exit_time, utc=True) < pd.Timestamp("2026-01-01", tz="UTC")).all()
+
+def test_favorable_funding_at_ambiguous_entry_and_exit_boundaries_is_not_assumed():
+    index = pd.date_range("2024-01-01 00:05:00", periods=3, freq="5min", tz="UTC")
+    bars = pd.DataFrame(
+        {
+            "open": [100.0, 100.0, 100.0],
+            "high": [101.0, 101.0, 101.0],
+            "low": [99.0, 99.0, 99.0],
+            "close": [100.0, 100.0, 100.0],
+            "signal": [-1, 0, 0],
+            "stop": [105.0, float("nan"), float("nan")],
+            "target": [float("nan"), float("nan"), float("nan")],
+        },
+        index=index,
+    )
+    funding = pd.DataFrame(
+        {"funding_rate": [0.001, 0.001], "mark_price": [100.0, 100.0]},
+        index=pd.DatetimeIndex(["2024-01-01 00:05:00", "2024-01-01 00:10:00"], tz="UTC"),
+    )
+
+    trades = run_backtest(
+        bars, funding, "BTCUSDT", "M11", "5m",
+        fee_bps=0, slippage_bps=0, rr=2, max_hold_bars=1,
+    )
+
+    assert len(trades) == 1
+    assert trades.iloc[0].exit_reason == "TIME"
+    assert abs(trades.iloc[0].funding_cost_pct) < 1e-12
+
+
+def test_favorable_funding_inside_holding_interval_is_applied():
+    index = pd.date_range("2024-01-01 00:05:00", periods=4, freq="5min", tz="UTC")
+    bars = pd.DataFrame(
+        {
+            "open": [100.0] * 4,
+            "high": [101.0] * 4,
+            "low": [99.0] * 4,
+            "close": [100.0] * 4,
+            "signal": [-1, 0, 0, 0],
+            "stop": [105.0, float("nan"), float("nan"), float("nan")],
+            "target": [float("nan")] * 4,
+        },
+        index=index,
+    )
+    funding = pd.DataFrame(
+        {"funding_rate": [0.001], "mark_price": [110.0]},
+        index=pd.DatetimeIndex(["2024-01-01 00:15:00"], tz="UTC"),
+    )
+
+    trades = run_backtest(
+        bars, funding, "BTCUSDT", "M11", "5m",
+        fee_bps=0, slippage_bps=0, rr=2, max_hold_bars=3,
+    )
+
+    assert len(trades) == 1
+    assert trades.iloc[0].exit_reason == "TIME"
+    assert abs(trades.iloc[0].funding_cost_pct + 0.11) < 1e-9
