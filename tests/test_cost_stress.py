@@ -51,10 +51,10 @@ def test_cost_stress_grid_does_not_define_any_ensemble_or_m3_profile():
 
 def test_historical_oi_loader_shifts_post_june_2026_rows_to_available_time(tmp_path):
     csv = (
-        "create_time,symbol,sum_open_interest,sum_open_interest_value\\n"
-        "2026-06-24 23:55:00,BTCUSDT,10,1000\\n"
-        "2026-06-25 00:00:00,BTCUSDT,11,1100\\n"
-        "2026-06-25 00:05:00,BTCUSDT,12,1200\\n"
+        "create_time,symbol,sum_open_interest,sum_open_interest_value\n"
+        "2026-06-24 23:55:00,BTCUSDT,10,1000\n"
+        "2026-06-25 00:00:00,BTCUSDT,11,1100\n"
+        "2026-06-25 00:05:00,BTCUSDT,12,1200\n"
     )
     path = tmp_path / "BTCUSDT-metrics-2026-06-25.zip"
     with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
