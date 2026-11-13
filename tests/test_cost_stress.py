@@ -1,4 +1,8 @@
+import zipfile
+
 import pandas as pd
+
+from crypto_research.metrics import read_metrics_zip
 
 from crypto_research.cost_stress_run import (
     COST_SCENARIOS,
@@ -42,3 +46,25 @@ def test_cost_stress_grid_does_not_define_any_ensemble_or_m3_profile():
     profiles = selected_profiles()
     assert all(model in {"M6", "M11"} for model in profiles)
     assert "M3" not in profiles
+
+
+
+def test_historical_oi_loader_shifts_post_june_2026_rows_to_available_time(tmp_path):
+    csv = (
+        "create_time,symbol,sum_open_interest,sum_open_interest_value\\n"
+        "2026-06-24 23:55:00,BTCUSDT,10,1000\\n"
+        "2026-06-25 00:00:00,BTCUSDT,11,1100\\n"
+        "2026-06-25 00:05:00,BTCUSDT,12,1200\\n"
+    )
+    path = tmp_path / "BTCUSDT-metrics-2026-06-25.zip"
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("BTCUSDT-metrics-2026-06-25.csv", csv)
+
+    oi = read_metrics_zip(path, "BTCUSDT")
+
+    assert pd.Timestamp("2026-06-24 23:55:00", tz="UTC") in oi.index
+    assert pd.Timestamp("2026-06-25 00:05:00", tz="UTC") in oi.index
+    assert pd.Timestamp("2026-06-25 00:10:00", tz="UTC") in oi.index
+    assert pd.Timestamp("2026-06-25 00:00:00", tz="UTC") not in oi.index
+    assert oi.loc[pd.Timestamp("2026-06-25 00:05:00", tz="UTC"), "sum_open_interest_value"] == 1100
+    assert "shifted +5m" in oi.attrs["timestamp_alignment"]
