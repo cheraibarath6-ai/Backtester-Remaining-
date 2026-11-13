@@ -147,6 +147,12 @@ def main():
     funding = acquire_funding(symbol, args.start, args.end)
     candle_quality = quality_report(raw, symbol, args.start, args.end)
     funding.to_csv(out / f"{symbol}_funding.csv")
+    funding_gaps = funding.index.to_series().diff().dropna()
+    funding_max_gap_hours = (
+        float(funding_gaps.max().total_seconds() / 3600)
+        if not funding_gaps.empty else None
+    )
+    funding_missing_months = funding.attrs.get("missing_archive_months", [])
 
     benchmark_raw = None
     if symbol != args.benchmark_symbol and any(m in args.models for m in ("M10", "M13")):
@@ -180,6 +186,9 @@ def main():
                     "slippage_bps_per_side": args.slippage_bps,
                     "planned_rr": args.rr,
                     "funding_source": funding.attrs.get("source", "unknown"),
+                    "funding_rows": int(len(funding)),
+                    "funding_max_gap_hours": funding_max_gap_hours,
+                    "funding_missing_archive_months": json.dumps(funding_missing_months),
                     "candle_coverage_pct": candle_quality.get("coverage_pct"),
                     "oi_coverage_pct": oi_quality.get("coverage_pct") if oi_quality else None,
                 }
@@ -244,6 +253,8 @@ def main():
         "candle_quality": candle_quality,
         "funding_source": funding.attrs.get("source", "unknown"),
         "funding_rows": int(len(funding)),
+        "funding_max_gap_hours": funding_max_gap_hours,
+        "funding_missing_archive_months": funding_missing_months,
         "open_interest_quality": oi_quality,
         "open_interest_rows": int(len(oi)) if oi is not None else 0,
         "note": (
