@@ -21,9 +21,10 @@ def run_backtest(
 
     Signals on bar i-1 are filled at bar i open. The entry bar is included in
     barrier checks; if both stop and target are touched within one OHLC bar,
-    the conservative stop-first rule is used. Funding cashflows apply to every
-    USD-M perpetual position held across a funding timestamp, regardless of
-    which model generated the signal.
+    the conservative stop-first rule is used. An optional ATR trailing stop is
+    updated only after a completed bar and can trigger from the following bar.
+    Funding cashflows apply to every USD-M perpetual position held across a
+    funding timestamp, regardless of which model generated the signal.
     """
     bar_minutes = {
         "1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30,
