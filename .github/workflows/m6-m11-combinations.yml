@@ -12,7 +12,7 @@ on:
       - "crypto_research/aggregate_independent.py"
       - "tests/test_combinations.py"
   pull_request:
-    branches: [research/funding-notional-audit-v2]
+    branches: [main]
     paths:
       - ".github/workflows/m6-m11-combinations.yml"
       - "crypto_research/combination_run.py"
