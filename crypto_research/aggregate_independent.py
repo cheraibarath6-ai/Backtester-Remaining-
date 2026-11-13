@@ -41,7 +41,10 @@ def _aggregate_trade_rows(trades: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame()
     rows = []
     keys = ["model", "variant", "timeframe"]
-    for key, frame in trades.groupby(keys, dropna=False):
+    for key, all_frame in trades.groupby(keys, dropna=False):
+        gap_mask = all_frame.exit_reason.eq("DATA_GAP") if "exit_reason" in all_frame.columns else pd.Series(False, index=all_frame.index)
+        data_gap_trades = int(gap_mask.sum())
+        frame = all_frame.loc[~gap_mask].copy()
         net = pd.to_numeric(frame.net_bps, errors="coerce").fillna(0.0)
         net_r = pd.to_numeric(frame.net_R, errors="coerce").fillna(0.0)
         gross_profit = float(net[net > 0].sum())
@@ -56,28 +59,30 @@ def _aggregate_trade_rows(trades: pd.DataFrame) -> pd.DataFrame:
                 **_risk_curve_metrics(symbol_frame),
             })
         dd_values = [x["max_drawdown_pct_at_1pct_risk"] for x in symbol_drawdowns]
-        holding = pd.to_numeric(frame.holding_minutes, errors="coerce")
+        holding = pd.to_numeric(frame.holding_minutes, errors="coerce") if not frame.empty else pd.Series(dtype=float)
         rows.append({
             "model": key[0],
             "variant": key[1],
             "timeframe": key[2],
-            "symbol_streams": int(frame.symbol.nunique()),
+            "symbol_streams": int(frame.symbol.nunique()) if not frame.empty else 0,
             "trades": int(len(frame)),
+            "total_trade_records": int(len(all_frame)),
+            "data_gap_trades": data_gap_trades,
             "wins": wins,
             "losses": int(len(frame) - wins),
-            "win_rate_pct": round(100 * wins / len(frame), 2),
+            "win_rate_pct": round(100 * wins / len(frame), 2) if len(frame) else 0.0,
             "aggregate_trade_pf_bps": round(gross_profit / gross_loss, 4) if gross_loss else None,
             "aggregate_profit_factor_R": round(gross_profit_r / gross_loss_r, 4) if gross_loss_r else None,
             "net_bps_sum": round(float(net.sum()), 2),
             "net_R_sum": round(float(net_r.sum()), 3),
             "fixed_initial_equity_risk_return_pct_at_1pct": round(float(net_r.sum()), 3),
-            "avg_trade_bps": round(float(net.mean()), 3),
+            "avg_trade_bps": round(float(net.mean()), 3) if len(frame) else None,
             "avg_holding_minutes": round(float(holding.mean()), 2) if holding.notna().any() else None,
             "median_holding_minutes": round(float(holding.median()), 2) if holding.notna().any() else None,
             "worst_symbol_max_drawdown_pct_at_1pct_risk": round(min(dd_values), 3) if dd_values else None,
             "median_symbol_max_drawdown_pct_at_1pct_risk": round(float(pd.Series(dd_values).median()), 3) if dd_values else None,
             "symbol_drawdowns_json": json.dumps(symbol_drawdowns, sort_keys=True),
-            "note": "Trade-level aggregation across independent symbol streams; not a capital-weighted portfolio return or portfolio drawdown",
+            "note": "DATA_GAP exits are retained in the ledger but excluded from performance metrics; cross-symbol sums are not a capital-weighted portfolio return or drawdown",
         })
     return pd.DataFrame(rows)
 
@@ -88,7 +93,10 @@ def _aggregate_yearly_trade_rows(trades: pd.DataFrame) -> pd.DataFrame:
     frame = trades.copy()
     frame["year"] = pd.to_datetime(frame.exit_time, utc=True).dt.year
     rows = []
-    for key, group in frame.groupby(["model", "variant", "timeframe", "year"], dropna=False):
+    for key, all_group in frame.groupby(["model", "variant", "timeframe", "year"], dropna=False):
+        gap_mask = all_group.exit_reason.eq("DATA_GAP") if "exit_reason" in all_group.columns else pd.Series(False, index=all_group.index)
+        data_gap_trades = int(gap_mask.sum())
+        group = all_group.loc[~gap_mask].copy()
         net = pd.to_numeric(group.net_bps, errors="coerce").fillna(0.0)
         net_r = pd.to_numeric(group.net_R, errors="coerce").fillna(0.0)
         gp = float(net[net > 0].sum())
@@ -96,24 +104,26 @@ def _aggregate_yearly_trade_rows(trades: pd.DataFrame) -> pd.DataFrame:
         gp_r = float(net_r[net_r > 0].sum())
         gl_r = abs(float(net_r[net_r < 0].sum()))
         wins = int((net > 0).sum())
+        holding = pd.to_numeric(group.holding_minutes, errors="coerce") if not group.empty else pd.Series(dtype=float)
         rows.append({
             "model": key[0],
             "variant": key[1],
             "timeframe": key[2],
             "year": int(key[3]),
-            "symbol_streams": int(group.symbol.nunique()),
+            "symbol_streams": int(group.symbol.nunique()) if not group.empty else 0,
             "trades": int(len(group)),
-            "win_rate_pct": round(100 * wins / len(group), 2),
+            "total_trade_records": int(len(all_group)),
+            "data_gap_trades": data_gap_trades,
+            "win_rate_pct": round(100 * wins / len(group), 2) if len(group) else 0.0,
             "aggregate_trade_pf_bps": round(gp / gl, 4) if gl else None,
             "aggregate_profit_factor_R": round(gp_r / gl_r, 4) if gl_r else None,
             "net_bps_sum": round(float(net.sum()), 2),
             "net_R_sum": round(float(net_r.sum()), 3),
             "fixed_initial_equity_risk_return_pct_at_1pct": round(float(net_r.sum()), 3),
-            "avg_holding_minutes": round(float(pd.to_numeric(group.holding_minutes, errors="coerce").mean()), 2),
-            "note": "Same-model yearly aggregation across symbol streams; not a portfolio return",
+            "avg_holding_minutes": round(float(holding.mean()), 2) if holding.notna().any() else None,
+            "note": "DATA_GAP exits are retained in the ledger but excluded from yearly performance metrics",
         })
     return pd.DataFrame(rows)
-
 
 def main():
     parser = argparse.ArgumentParser(description="Aggregate independent model screening artifacts")
@@ -169,6 +179,7 @@ def main():
             out / "development_and_2025_positive_candidates.csv", index=False
         )
 
+    data_gap_trades = int(trades.exit_reason.eq("DATA_GAP").sum()) if not trades.empty and "exit_reason" in trades.columns else 0
     report = [
         "# Independent Core Engine Screening",
         "",
@@ -177,6 +188,7 @@ def main():
         f"- Result rows: {len(results)}",
         f"- Yearly result rows: {len(yearly)}",
         f"- Trade ledger rows: {len(trades)}",
+        f"- DATA_GAP exits retained for audit but excluded from performance metrics: {data_gap_trades}",
         f"- Development-positive candidates (PF > 1, net-R > 0, 100+ trades): {len(development_positive)}",
         f"- Development plus 2025 validation positive: {len(development_and_validation_positive)}",
         "",
