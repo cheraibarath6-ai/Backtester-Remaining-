@@ -47,6 +47,8 @@ def test_cost_stress_grid_does_not_define_any_ensemble_or_m3_profile():
     assert all(model in {"M6", "M11"} for model in profiles)
     assert "M3" not in profiles
     assert "BASELINE_H24" in {p["variant"] for p in profiles["M6"]}
+    assert "HOLD_48H" in {p["variant"] for p in profiles["M6"]}
+    assert next(p for p in profiles["M6"] if p["variant"] == "HOLD_48H")["hold_hours"] == 48.0
     assert "BASELINE_H24" in {p["variant"] for p in profiles["M11"]}
     assert next(p for p in profiles["M6"] if p["variant"] == "BASELINE_H24")["hold_hours"] == 24.0
     assert next(p for p in profiles["M11"] if p["variant"] == "BASELINE_H24")["hold_hours"] == 24.0
