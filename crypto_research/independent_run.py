@@ -111,9 +111,12 @@ def _evaluate(
         trades["parameters_json"] = json.dumps(params, sort_keys=True)
     base = {"model": model, "variant": variant, "symbol": symbol, "timeframe": timeframe}
     yearly = _year_rows(trades, base)
-    stats["development_2021_2024"] = _period_summary(trades, 2021, 2024)
-    stats["validation_2025"] = _period_summary(trades, 2025, 2025)
-    stats["holdout_2026"] = _period_summary(trades, 2026, 2026)
+    development = _period_summary(trades, 2021, 2024)
+    validation = _period_summary(trades, 2025, 2025)
+    holdout = _period_summary(trades, 2026, 2026)
+    stats.update({f"development_{key}": value for key, value in development.items()})
+    stats.update({f"validation_2025_{key}": value for key, value in validation.items()})
+    stats.update({f"holdout_2026_{key}": value for key, value in holdout.items()})
     return stats, trades, yearly
 
 
