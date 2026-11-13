@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import time
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -11,12 +12,12 @@ import requests
 
 from .backtest import run_backtest, summarize
 from .combination_run import combination_profiles
-from .data import COLS, acquire_funding, quality_report
+from .data import COLS, _read_funding_zip, get_zip, quality_report
 from .independent_models import make_independent_signals
 from .metrics import metrics_quality_report
 
-KLINE_URL = "https://fapi.binance.com/fapi/v1/klines"
-OI_URL = "https://fapi.binance.com/futures/data/openInterestHist"
+VISION_BASE = "https://data.binance.vision/data/futures/um/daily"
+OI_TIMESTAMP_SHIFT_START = pd.Timestamp("2026-06-25 00:00:00", tz="UTC")
 
 FORWARD_VARIANTS = {
     "M6": {"D100_STOP2_H168", "RR3_H168", "STOP2_H168"},
@@ -80,40 +81,198 @@ def parse_kline_rows(rows: list) -> pd.DataFrame:
     ]
 
 
-def acquire_recent_klines(symbol: str, start, end) -> pd.DataFrame:
-    """Fetch recent completed 1m USD-M candles from Binance's official API."""
-    start_ts, end_ts = _utc(start), _utc(end)
-    cursor = int(start_ts.timestamp() * 1000)
-    end_ms = int(end_ts.timestamp() * 1000)
-    rows = []
-    while cursor < end_ms:
-        batch = _request_json(
-            KLINE_URL,
-            {
-                "symbol": symbol,
-                "interval": "1m",
-                "startTime": cursor,
-                "endTime": end_ms - 1,
-                "limit": 1500,
-            },
-        )
-        if not batch:
-            break
-        rows.extend(batch)
-        next_cursor = int(batch[-1][0]) + 60_000
-        if next_cursor <= cursor:
-            raise RuntimeError("Kline API pagination did not advance")
-        cursor = next_cursor
-        if len(batch) < 1500:
-            break
-        time.sleep(0.12)
+def _timestamp_unit_from_values(values: pd.Series) -> str:
+    sample = pd.to_numeric(values, errors="coerce").dropna()
+    if sample.empty:
+        raise ValueError("Daily archive contains no numeric timestamps")
+    magnitude = float(sample.abs().median())
+    if magnitude >= 1e17:
+        return "ns"
+    if magnitude >= 1e14:
+        return "us"
+    return "ms"
 
-    data = parse_kline_rows(rows)
+
+def parse_daily_kline_archive(path: Path) -> pd.DataFrame:
+    """Parse an official USD-M daily kline ZIP with or without a CSV header."""
+    with zipfile.ZipFile(path) as archive:
+        csvs = [name for name in archive.namelist() if name.endswith(".csv")]
+        if not csvs:
+            raise ValueError(f"No kline CSV in {path}")
+        with archive.open(csvs[0]) as stream:
+            data = pd.read_csv(stream, header=None)
+
+    first = data.iloc[0, 0] if not data.empty else None
+    if pd.isna(pd.to_numeric(pd.Series([first]), errors="coerce").iloc[0]):
+        headers = [str(value).strip().lower().replace(" ", "_") for value in data.iloc[0].tolist()]
+        data = data.iloc[1:].copy()
+        data.columns = headers
+        aliases = {
+            "quote_asset_volume": "quote_volume",
+            "number_of_trades": "trades",
+            "taker_buy_base_asset_volume": "taker_buy_base",
+            "taker_buy_quote_asset_volume": "taker_buy_quote",
+        }
+        data = data.rename(columns=aliases)
+    else:
+        data.columns = COLS[:len(data.columns)]
+
+    required = [
+        "open_time", "open", "high", "low", "close", "volume",
+        "quote_volume", "trades", "taker_buy_base", "taker_buy_quote",
+    ]
+    missing = [column for column in required if column not in data.columns]
+    if missing:
+        raise ValueError(f"Daily kline archive schema missing {missing}; got {list(data.columns)}")
+
+    unit = _timestamp_unit_from_values(data.open_time)
+    data["open_time"] = pd.to_datetime(
+        pd.to_numeric(data.open_time, errors="coerce"), unit=unit, utc=True
+    )
+    numeric = [
+        "open", "high", "low", "close", "volume", "quote_volume",
+        "taker_buy_base", "taker_buy_quote",
+    ]
+    for column in numeric:
+        data[column] = pd.to_numeric(data[column], errors="coerce")
+    data["trades"] = pd.to_numeric(data.trades, errors="coerce").fillna(0)
+    data = data.dropna(subset=["open_time", *numeric]).sort_values("open_time")
+    data = data.drop_duplicates("open_time", keep="last")
+    return data.set_index("open_time")[required[1:]].sort_index()
+
+
+def _completed_daily_archive_end(end) -> pd.Timestamp:
+    """Only include days whose official daily ZIP could already be published."""
+    return _utc(end).floor("D")
+
+
+def acquire_recent_klines(symbol: str, start, end) -> pd.DataFrame:
+    """Fetch completed recent 1m candles from official Binance Vision daily ZIPs.
+
+    Binance's REST API can be region-restricted (HTTP 451). Daily archives avoid
+    that endpoint and intentionally exclude the current UTC day, which is not
+    yet a complete published daily file.
+    """
+    start_ts = _utc(start)
+    archive_end = _completed_daily_archive_end(end)
+    if start_ts >= archive_end:
+        raise RuntimeError("No completed Binance Vision daily candle days in requested window")
+    parts = []
+    missing_days = []
+    for day in pd.date_range(start_ts.floor("D"), archive_end - pd.Timedelta(days=1), freq="D"):
+        date = day.strftime("%Y-%m-%d")
+        name = f"{symbol}-1m-{date}.zip"
+        url = f"{VISION_BASE}/klines/{symbol}/1m/{name}"
+        path = get_zip(url, Path("data") / "raw" / "forward_klines" / symbol / name, verify_checksum=True)
+        if path is None:
+            missing_days.append(date)
+            continue
+        part = parse_daily_kline_archive(path)
+        part = part.loc[(part.index >= start_ts) & (part.index < archive_end)]
+        if not part.empty:
+            parts.append(part)
+
+    if not parts:
+        raise RuntimeError(f"No completed Binance Vision daily 1m candles for {symbol}")
+    data = pd.concat(parts).sort_index()
+    duplicate_count = int(data.index.duplicated().sum())
+    data = data[~data.index.duplicated(keep="last")]
+    data.attrs["source"] = "binance_vision_official_usdm_daily_1m"
+    data.attrs["duplicate_timestamps_before_dedup"] = duplicate_count
+    data.attrs["missing_archive_days"] = missing_days
+    data.attrs["effective_end"] = str(archive_end)
+    return data
+
+
+def parse_metrics_archive(path: Path, symbol: str) -> pd.DataFrame:
+    """Parse daily USD-M metrics; shift post-2026-06-25 OI labels to availability time."""
+    with zipfile.ZipFile(path) as archive:
+        csvs = [name for name in archive.namelist() if name.endswith(".csv")]
+        if not csvs:
+            raise ValueError(f"No metrics CSV in {path}")
+        with archive.open(csvs[0]) as stream:
+            data = pd.read_csv(stream)
+    required = {"create_time", "sum_open_interest_value"}
+    if not required.issubset(data.columns):
+        raise ValueError(f"Unexpected Binance metrics schema for {symbol}: {list(data.columns)}")
+    raw_time = data["create_time"]
+    if pd.api.types.is_numeric_dtype(raw_time):
+        unit = _timestamp_unit_from_values(raw_time)
+        timestamp = pd.to_datetime(pd.to_numeric(raw_time, errors="coerce"), unit=unit, utc=True)
+    else:
+        timestamp = pd.to_datetime(raw_time, utc=True, errors="coerce")
+    out = pd.DataFrame(index=pd.DatetimeIndex(timestamp, name="time"))
+    out["sum_open_interest_value"] = pd.to_numeric(data["sum_open_interest_value"], errors="coerce").to_numpy()
+    if "sum_open_interest" in data:
+        out["sum_open_interest"] = pd.to_numeric(data["sum_open_interest"], errors="coerce").to_numpy()
+    out = out.dropna(subset=["sum_open_interest_value"]).sort_index()
+    # Binance USD-M metrics daily archives changed timestamp labeling on 2026-06-25:
+    # OI snapshots labeled T represent T+5m from that date onward. Move the row
+    # timestamp to the actual availability time to prevent a 5-minute lookahead.
+    shift_mask = out.index >= OI_TIMESTAMP_SHIFT_START
+    if shift_mask.any():
+        out.index = out.index + pd.to_timedelta(shift_mask.astype(int) * 5, unit="min")
+    out = out[~out.index.duplicated(keep="last")].sort_index()
+    out["symbol"] = symbol
+    out.attrs["timestamp_alignment"] = "post_2026-06-25 labels shifted +5m to actual snapshot availability"
+    return out
+
+
+def acquire_recent_open_interest(symbol: str, start, end) -> pd.DataFrame:
+    """Fetch recent official 5m OI metrics from Binance Vision daily archives."""
+    start_ts, end_ts = _utc(start), _utc(end)
+    parts = []
+    missing_days = []
+    for day in pd.date_range(start_ts.floor("D"), end_ts.floor("D") - pd.Timedelta(days=1), freq="D"):
+        date = day.strftime("%Y-%m-%d")
+        name = f"{symbol}-metrics-{date}.zip"
+        url = f"{VISION_BASE}/metrics/{symbol}/{name}"
+        path = get_zip(url, Path("data") / "raw" / "forward_metrics" / symbol / name, verify_checksum=True)
+        if path is None:
+            missing_days.append(date)
+            continue
+        part = parse_metrics_archive(path, symbol)
+        parts.append(part)
+    if not parts:
+        raise RuntimeError(f"No recent official Binance OI metrics archives for {symbol}")
+    data = pd.concat(parts).sort_index()
+    duplicate_count = int(data.index.duplicated().sum())
+    data = data[~data.index.duplicated(keep="last")]
+    data = data.loc[(data.index >= start_ts) & (data.index <= end_ts)]
+    data.attrs["source"] = "binance_vision_official_daily_metrics"
+    data.attrs["missing_archive_days"] = missing_days
+    data.attrs["duplicate_timestamps_before_dedup"] = duplicate_count
+    data.attrs["timestamp_alignment"] = "post_2026-06-25 create_time shifted +5m; no forward-filled future snapshots"
+    return data
+
+
+def acquire_recent_funding(symbol: str, start, end) -> pd.DataFrame:
+    """Fetch official daily funding archives; fail closed if any day is missing."""
+    start_ts, end_ts = _utc(start), _utc(end)
+    parts = []
+    missing_days = []
+    for day in pd.date_range(start_ts.floor("D"), end_ts.floor("D") - pd.Timedelta(days=1), freq="D"):
+        date = day.strftime("%Y-%m-%d")
+        name = f"{symbol}-fundingRate-{date}.zip"
+        url = f"{VISION_BASE}/fundingRate/{symbol}/{name}"
+        path = get_zip(url, Path("data") / "raw" / "forward_funding" / symbol / name, verify_checksum=True)
+        if path is None:
+            missing_days.append(date)
+            continue
+        parts.append(_read_funding_zip(path))
+    if missing_days:
+        raise RuntimeError(f"Missing official daily funding archives for {symbol}: {missing_days}")
+    if not parts:
+        raise RuntimeError(f"No official daily funding archives for {symbol}")
+    data = pd.concat(parts).sort_index()
+    duplicate_count = int(data.index.duplicated().sum())
+    data = data[~data.index.duplicated(keep="last")]
     data = data.loc[(data.index >= start_ts) & (data.index < end_ts)]
     if data.empty:
-        raise RuntimeError(f"No recent Binance USD-M 1m candles for {symbol}")
-    data.attrs["source"] = "binance_official_fapi_klines_api"
-    data.attrs["duplicate_timestamps_before_dedup"] = 0
+        raise RuntimeError(f"No official funding settlements in forward window for {symbol}")
+    data.attrs["source"] = "binance_vision_official_daily_funding_archive"
+    data.attrs["missing_archive_days"] = []
+    data.attrs["duplicate_timestamps_before_dedup"] = duplicate_count
     return data
 
 
@@ -142,43 +301,6 @@ def parse_open_interest_rows(rows: list, symbol: str) -> pd.DataFrame:
     return out
 
 
-def acquire_recent_open_interest(symbol: str, start, end) -> pd.DataFrame:
-    """Fetch official 5m OI history; Binance limits this endpoint to recent history."""
-    start_ts, end_ts = _utc(start), _utc(end)
-    cursor = int(start_ts.timestamp() * 1000)
-    end_ms = int(end_ts.timestamp() * 1000)
-    rows = []
-    step_ms = 5 * 60_000
-    while cursor < end_ms:
-        batch = _request_json(
-            OI_URL,
-            {
-                "symbol": symbol,
-                "period": "5m",
-                "startTime": cursor,
-                "endTime": end_ms - 1,
-                "limit": 500,
-            },
-        )
-        if not batch:
-            break
-        rows.extend(batch)
-        next_cursor = int(batch[-1]["timestamp"]) + step_ms
-        if next_cursor <= cursor:
-            raise RuntimeError("Open-interest API pagination did not advance")
-        cursor = next_cursor
-        if len(batch) < 500:
-            break
-        time.sleep(0.12)
-
-    data = parse_open_interest_rows(rows, symbol)
-    data = data.loc[(data.index >= start_ts) & (data.index < end_ts)]
-    if data.empty:
-        raise RuntimeError(f"No recent Binance open-interest history for {symbol}")
-    data.attrs["source"] = "binance_official_open_interest_hist_api"
-    data.attrs["missing_archive_days"] = []
-    data.attrs["archive_days_downloaded"] = 0
-    return data
 
 
 def mask_pre_evaluation_signals(signals: pd.DataFrame, evaluation_start) -> pd.DataFrame:
@@ -232,8 +354,13 @@ def main():
     )
 
     raw = acquire_recent_klines(symbol, start_ts, end_ts)
-    funding = acquire_funding(symbol, start_text, end_text)
+    end_ts = _utc(raw.attrs["effective_end"])
+    end_text = _naive_utc_text(end_ts)
+    if evaluation_start >= end_ts:
+        raise RuntimeError("No completed daily archive data exists after the forward evaluation start")
+    funding = acquire_recent_funding(symbol, evaluation_start, end_ts)
     candle_quality = quality_report(raw, symbol, start_text, end_text)
+    candle_quality["missing_archive_days"] = raw.attrs.get("missing_archive_days", [])
     candle_quality["source"] = raw.attrs.get("source", "unknown")
 
     oi = None
