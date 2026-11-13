@@ -51,3 +51,10 @@ This document records public research sources inspected for the independent-engi
 - The [SuperTrend strategy](https://github.com/davidzr/freqtrade-strategies/blob/main/strategies/SuperTrend/SuperTrend.py) explicitly cautions that its custom indicator implementation is not validated against the original paper or another trusted reference. Any later Supertrend test must independently validate the indicator calculation first.
 
 These public embedded results are not independently verified and are not used as our performance evidence. The first-pass set favours strategy families that can be implemented transparently and tested with the same futures execution model.
+
+
+## Additional independent research framework inspected
+
+[Baruna240/Momo-Quant-Lab](https://github.com/Baruna240/Momo-Quant-Lab) is MIT-licensed and contains a reproducible paper-trading lab with separate spot/futures strategy tests, cost modelling and time-ordered validation. Its published findings cover only about 117–133 days for the altcoin/futures comparison: 4h swing was +1.1% on spot, while breakout, RSI dip and EMA trend were negative; the listed perpetual strategies were also negative (futures AI -18.8%, swing long/short -25.7%, short RSI -29.0%, short breakdown -61.5%). These are the repository author's simulator results, not our independently verified results, and the short sample is not enough to establish a durable edge.
+
+Its research pipeline is a useful validation reference: time-ordered walk-forward splits, 2x cost stress, one-bar-late entry, removing the top 5% of trades, Monte Carlo drawdown and a significance threshold that rises with the number of configurations tried. We will incorporate these robustness checks after the first independent screen; we will not treat its reported spot/futures performance as proof of an engine.
