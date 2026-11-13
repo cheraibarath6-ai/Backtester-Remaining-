@@ -14,6 +14,7 @@ def run_backtest(
     slippage_bps=2.0,
     rr=2.0,
     max_hold_bars=288,
+    trailing_atr_multiple: float | None = None,
 ):
     """
     Single-position, next-bar-open backtest.
@@ -97,7 +98,7 @@ def run_backtest(
                     ))
 
         net = gross - fees - fund_cost
-        risk = abs(position["entry"] - position["stop"]) / position["entry"]
+        risk = abs(position["entry"] - position.get("initial_stop", position["stop"])) / position["entry"]
         trades.append({
             "symbol": symbol,
             "model": model,
@@ -108,7 +109,9 @@ def run_backtest(
             "entry": position["entry"],
             "exit": exit_fill,
             "stop": position["stop"],
+            "initial_stop": position.get("initial_stop", position["stop"]),
             "target": position["target"],
+            "trailing_atr_multiple": trailing_atr_multiple,
             "exit_reason": reason,
             "gross_return_pct": gross * 100,
             "fees_pct": fees * 100,
@@ -131,8 +134,10 @@ def run_backtest(
                 continue
 
             target = targets[i - 1]
-            if not np.isfinite(target):
+            if not np.isfinite(target) and trailing_atr_multiple is None:
                 target = entry + side * rr * abs(entry - stop)
+            elif not np.isfinite(target):
+                target = np.nan
             if (side == 1 and target <= entry) or (side == -1 and target >= entry):
                 continue
 
@@ -140,6 +145,7 @@ def run_backtest(
                 "side": side,
                 "entry": entry,
                 "stop": float(stop),
+                "initial_stop": float(stop),
                 "target": float(target),
                 "entry_time": index[i] - pd.Timedelta(minutes=bar_minutes),
                 "entry_i": i,
@@ -181,6 +187,19 @@ def run_backtest(
                 exit_px, reason = pos["target"], "TARGET"
             elif max_hold_bars is not None and held >= max_hold_bars:
                 exit_px, reason = closes[i], "TIME"
+
+        # A trailing stop is updated only after this completed bar has been
+        # fully evaluated. It can therefore trigger no earlier than the next
+        # bar, avoiding intrabar lookahead from the current high/low.
+        if exit_px is None and trailing_atr_multiple is not None and "atr" in bars.columns:
+            atr_value = float(bars["atr"].iloc[i])
+            if np.isfinite(atr_value) and atr_value > 0:
+                if pos["side"] == 1:
+                    candidate_stop = highs[i] - trailing_atr_multiple * atr_value
+                    pos["stop"] = max(pos["stop"], candidate_stop)
+                else:
+                    candidate_stop = lows[i] + trailing_atr_multiple * atr_value
+                    pos["stop"] = min(pos["stop"], candidate_stop)
 
         if exit_px is not None:
             finish_position(pos, index[i], exit_px, reason, held)
