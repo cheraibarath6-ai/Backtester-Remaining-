@@ -1,5 +1,27 @@
 # Corrected independent crypto-futures research — 14 November 2026
 
+
+## Follow-up audit: period attribution and censored trades
+
+A subsequent audit on 14 November found that the earlier screen, sensitivity, combination and cost-stress helpers assigned development/validation trades by **exit year** rather than by **entry cohort**, and the shared summary counted unresolved `END_OF_SAMPLE` records as completed trades. This could place a pre-validation entry into the 2025 validation bucket and score positions that had not actually closed by the data boundary.
+
+The corrected code now:
+- defines development/validation cohorts by entry time within the requested period and requires the trade to exit before that period's exclusive end;
+- excludes both `DATA_GAP` and `END_OF_SAMPLE` records from performance metrics while retaining both in audit ledgers with separate counts;
+- applies the same exclusion to cross-symbol aggregators and the cost-stress bootstrap;
+- keeps yearly realized summaries grouped by exit year, but excludes censored records from their metrics.
+
+**Important:** the development, 2025 validation and 2026 retrospective cohort metrics shown in the earlier sections below come from the superseded runs listed above. They are not final selection evidence. The corrected reruns are:
+
+- [Funding/accounting and cohort regression tests — 43520168387](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43520168387)
+- [Full independent screen — 43520160545](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43520160545)
+- [M6/M11 one-factor sensitivity — 43520160442](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43520160442)
+- [M6/M11 combinations and expanding walk-forward — 43520168355](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43520168355)
+- [M6/M11 full OHLC cost stress — 43520168394](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43520168394)
+
+The combination and cost-stress grids also now include the previously omitted M6 48h holding-horizon anchor, M6 24h stop/RR/volume one-factor anchors, and M11 OI05/price025 36h candidate. No candidate is approved until these corrected runs and the expanding-window checks complete. 2026 remains retrospective audit evidence, not a pristine holdout.
+
+
 ## Scope and provenance
 
 - Research branch: `research/funding-notional-audit-v2`
