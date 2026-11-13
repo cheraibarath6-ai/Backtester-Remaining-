@@ -277,7 +277,7 @@ def main():
         print(f"PFI STAGE 4 DATA START {symbol} {a.start}..{a.end}",flush=True)
         raw=acquire_klines(symbol,a.start,a.end)
         fund=acquire_funding(symbol,a.start,a.end)
-        qualities.append(quality_report(raw,symbol))
+        qualities.append(quality_report(raw,symbol,a.start,a.end))
         funding_meta[symbol]=fund.attrs.get("source","unknown")
         fund.to_csv(out/f"{symbol}_funding.csv")
         market_data[symbol]=(raw,fund)
