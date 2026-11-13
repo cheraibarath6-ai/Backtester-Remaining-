@@ -116,10 +116,15 @@ def test_atr_trailing_stop_is_activated_only_after_bar_close():
 
 
 def test_summary_reports_holding_time():
-    trades = run_backtest(
-        _bars(entry_high=105.0), None, "BTCUSDT", "M6", "5m",
-        fee_bps=0, slippage_bps=0, rr=2,
-    )
+    trades = pd.DataFrame({
+        "entry_time": ["2024-01-01T00:05:00Z"],
+        "exit_time": ["2024-01-01T00:15:00Z"],
+        "exit_reason": ["TIME"],
+        "net_bps": [0.0],
+        "net_return_pct": [0.0],
+        "net_R": [0.0],
+        "funding_cost_pct": [0.0],
+    })
     stats = summarize(trades)
     assert stats["trades"] == 1
     assert stats["avg_holding_minutes"] == 10.0
