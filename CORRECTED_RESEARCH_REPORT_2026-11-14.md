@@ -163,3 +163,13 @@ The original 24h M6/M11 screen profiles were added to the within-model profile u
 - The new [expanding-window walk-forward workflow](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/workflows/m6-m11-walkforward.yml) is on the branch. Its execution/artifacts are not yet verified here.
 
 The latest branch comparison against `main` is 84 commits ahead across 34 changed files. The compare response contains **no M3 path**. All research changes remain confined to the independent-engine research, data/accounting, tests, reports and workflow files.
+
+
+## Latest Actions verification after baseline inclusion
+
+- [Funding Notional Audit Tests run 43503837843](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43503837843) completed successfully. Its job log confirms **70 passed in 1.21s**, including the walk-forward helper tests and the corrected 24h baseline-profile assertions.
+- [Updated M6/M11 combination + walk-forward run 43503837399](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43503837399) is queued with seven symbol jobs. The walk-forward matrix and aggregator are dependent jobs and will be created after the combination matrix completes.
+- [Baseline-inclusive full cost stress run 43503837360](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43503837360) is pending; its jobs have not yet been created at the latest status check.
+- Earlier run 43503121592 failed because the old long-hold test rejected the intentional 24h baseline; run 43503320576 passed the full test step (70 passed) but was cancelled during workflow replacement. The current run IDs above supersede those attempts.
+
+The original 24h M6/M11 profiles are now included in both the combination and cost-stress grids. No cost-stress or walk-forward performance result is claimed until their current artifacts finish and are inspected.
