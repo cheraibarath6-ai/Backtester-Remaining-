@@ -30,7 +30,7 @@ def main():
     for sym in a.symbols:
         print(f"DATA {sym}: downloading 1m klines and funding",flush=True)
         raw=acquire_klines(sym,a.start,a.end); fund=acquire_funding(sym,a.start,a.end)
-        quality.append(quality_report(raw,sym)); funding_sources[sym]=fund.attrs.get("source","unknown")
+        quality.append(quality_report(raw,sym,a.start,a.end)); funding_sources[sym]=fund.attrs.get("source","unknown")
         fund.to_csv(out/f"{sym}_funding.csv")
         for tf in a.timeframes:
             for model in a.models:
