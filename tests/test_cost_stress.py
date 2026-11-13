@@ -3,6 +3,7 @@ import zipfile
 import pandas as pd
 
 from crypto_research.metrics import read_metrics_zip
+from crypto_research.aggregate_cost_stress import _summary
 
 from crypto_research.cost_stress_run import (
     COST_SCENARIOS,
@@ -76,3 +77,27 @@ def test_historical_oi_loader_shifts_post_june_2026_rows_to_available_time(tmp_p
     assert pd.Timestamp("2026-06-25 00:00:00", tz="UTC") not in oi.index
     assert oi.loc[pd.Timestamp("2026-06-25 00:05:00", tz="UTC"), "sum_open_interest_value"] == 1100
     assert "shifted +5m" in oi.attrs["timestamp_alignment"]
+
+
+
+def test_cost_stress_aggregate_excludes_gap_and_end_of_sample_records():
+    trades = pd.DataFrame({
+        "model": ["M6"] * 3,
+        "variant": ["H24"] * 3,
+        "timeframe": ["4h"] * 3,
+        "cost_scenario": ["BASE_5_2"] * 3,
+        "fee_bps_per_side": [5.0] * 3,
+        "slippage_bps_per_side": [2.0] * 3,
+        "symbol": ["BTCUSDT"] * 3,
+        "exit_time": pd.to_datetime(["2025-01-01T04:00:00Z", "2025-01-02T04:00:00Z", "2025-01-03T04:00:00Z"], utc=True),
+        "exit_reason": ["TARGET", "DATA_GAP", "END_OF_SAMPLE"],
+        "net_bps": [100.0, -500.0, -700.0],
+        "net_R": [1.0, -5.0, -7.0],
+        "holding_minutes": [240, 240, 240],
+    })
+    result = _summary(trades, ["model", "variant", "timeframe", "cost_scenario"]).iloc[0]
+    assert result.total_trade_records == 3
+    assert result.trades == 1
+    assert result.data_gap_trades == 1
+    assert result.end_of_sample_trades == 1
+    assert result.net_R_sum == 1.0

@@ -1,6 +1,6 @@
 import pandas as pd
 
-from crypto_research.backtest import run_backtest, summarize
+from crypto_research.backtest import completed_period_cohort, run_backtest, summarize
 from crypto_research.data import _timestamp_unit, quality_report
 
 
@@ -287,3 +287,52 @@ def test_complete_end_of_sample_is_not_mislabelled_as_data_gap():
     )
     assert len(trades) == 1
     assert trades.iloc[0].exit_reason == "END_OF_SAMPLE"
+    stats = summarize(trades)
+    assert stats["trades"] == 0
+    assert stats["end_of_sample_trades"] == 1
+
+
+
+def test_summary_excludes_end_of_sample_records_from_performance_metrics():
+    trades = pd.DataFrame({
+        "entry_time": ["2024-01-01T00:00:00Z", "2024-01-01T01:00:00Z"],
+        "exit_time": ["2024-01-01T00:30:00Z", "2024-01-01T02:00:00Z"],
+        "exit_reason": ["TARGET", "END_OF_SAMPLE"],
+        "net_bps": [100.0, -500.0],
+        "net_return_pct": [1.0, -5.0],
+        "net_R": [1.0, -5.0],
+        "funding_cost_pct": [0.0, 0.0],
+        "holding_minutes": [30, 60],
+    })
+    stats = summarize(trades)
+    assert stats["total_trade_records"] == 2
+    assert stats["trades"] == 1
+    assert stats["end_of_sample_trades"] == 1
+    assert stats["net_R"] == 1.0
+    assert stats["net_bps"] == 100.0
+
+
+def test_period_cohort_uses_entry_time_and_requires_exit_before_period_end():
+    trades = pd.DataFrame({
+        "entry_time": [
+            "2024-12-31T20:00:00Z",
+            "2025-01-01T00:00:00Z",
+            "2025-12-30T00:00:00Z",
+            "2025-12-31T20:00:00Z",
+            "2025-12-30T00:00:00Z",
+        ],
+        "exit_time": [
+            "2025-01-01T04:00:00Z",
+            "2025-01-01T04:00:00Z",
+            "2025-12-31T00:00:00Z",
+            "2026-01-01T04:00:00Z",
+            "2025-12-31T00:00:00Z",
+        ],
+        "exit_reason": ["TARGET", "TARGET", "TARGET", "TARGET", "DATA_GAP"],
+        "net_R": [2.0, 1.0, 0.5, 3.0, -2.0],
+    })
+    cohort = completed_period_cohort(trades, "2025-01-01", "2026-01-01")
+    assert len(cohort) == 2
+    assert cohort.net_R.tolist() == [1.0, 0.5]
+    assert all(pd.to_datetime(cohort.entry_time, utc=True).dt.year == 2025)
+    assert (pd.to_datetime(cohort.exit_time, utc=True) < pd.Timestamp("2026-01-01", tz="UTC")).all()

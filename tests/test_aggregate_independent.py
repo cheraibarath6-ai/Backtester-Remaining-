@@ -59,3 +59,22 @@ def test_data_gap_trade_rows_are_audited_but_excluded_from_metrics():
     assert yearly.trades.tolist() == [2, 1]
     assert yearly.data_gap_trades.tolist() == [0, 1]
     assert yearly.net_R_sum.tolist() == [1.0, 1.0]
+
+
+
+def test_end_of_sample_and_data_gap_records_remain_auditable_but_are_not_scored():
+    trades = _trades()
+    trades["exit_reason"] = ["TARGET", "END_OF_SAMPLE", "TARGET", "DATA_GAP"]
+
+    aggregate = _aggregate_trade_rows(trades).iloc[0]
+    assert aggregate.total_trade_records == 4
+    assert aggregate.trades == 2
+    assert aggregate.data_gap_trades == 1
+    assert aggregate.end_of_sample_trades == 1
+    assert aggregate.net_R_sum == 3.0
+
+    yearly = _aggregate_yearly_trade_rows(trades).sort_values("year")
+    assert yearly.trades.tolist() == [1, 1]
+    assert yearly.data_gap_trades.tolist() == [0, 1]
+    assert yearly.end_of_sample_trades.tolist() == [1, 0]
+    assert yearly.net_R_sum.tolist() == [2.0, 1.0]
