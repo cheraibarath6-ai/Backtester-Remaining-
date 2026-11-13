@@ -11,6 +11,7 @@ import requests
 from .data import get_zip, _timestamp_unit
 
 METRICS_BASE = "https://data.binance.vision/data/futures/um/daily/metrics"
+OI_TIMESTAMP_SHIFT_START = pd.Timestamp("2026-06-25 00:00:00", tz="UTC")
 S3_LIST_URL = "https://s3-ap-northeast-1.amazonaws.com/data.binance.vision"
 S3_NS = {"s3": "http://s3.amazonaws.com/doc/2006-03-01/"}
 METRIC_COLUMNS = [
@@ -51,7 +52,12 @@ def read_metrics_zip(path: Path, symbol: str) -> pd.DataFrame:
         time_index = pd.to_datetime(raw_time, errors="coerce", utc=True)
 
     data = data.copy()
-    data["time"] = time_index
+    # From 2026-06-25, Binance metrics rows labeled T contain OI snapshots
+    # observed at T+5m. Shift to the actual availability timestamp before
+    # five-minute bucketing so M11 cannot consume a future OI snapshot.
+    shift_mask = pd.Series(time_index >= OI_TIMESTAMP_SHIFT_START, index=data.index)
+    availability_time = time_index + pd.to_timedelta(shift_mask.astype(int) * 5, unit="min")
+    data["time"] = availability_time
     data = data.dropna(subset=["time"])
     for column in NUMERIC_COLUMNS:
         if column not in data.columns:
@@ -66,6 +72,7 @@ def read_metrics_zip(path: Path, symbol: str) -> pd.DataFrame:
     grouped.index = pd.DatetimeIndex(grouped.index).tz_convert("UTC")
     grouped["symbol"] = symbol
     grouped.attrs["source"] = "binance_vision_official_daily_metrics"
+    grouped.attrs["timestamp_alignment"] = "post_2026-06-25 create_time shifted +5m to actual snapshot availability"
     return grouped
 
 
@@ -149,6 +156,7 @@ def acquire_open_interest(symbol, start, end, root=Path("data")) -> pd.DataFrame
     data.attrs["source"] = "binance_vision_official_daily_metrics"
     data.attrs["missing_archive_days"] = missing_days
     data.attrs["archive_days_downloaded"] = len(requested_days)
+    data.attrs["timestamp_alignment"] = "post_2026-06-25 create_time shifted +5m to actual snapshot availability"
     return data
 
 
