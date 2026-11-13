@@ -171,6 +171,15 @@ def summarize(t):
     gl = abs(float(l.net_bps.sum()))
     eq = (1 + t.net_return_pct / 100).cumprod()
     dd = (eq / eq.cummax() - 1).min() * 100
+    if "holding_minutes" in t.columns:
+        holding = pd.to_numeric(t.holding_minutes, errors="coerce")
+    elif {"entry_time", "exit_time"}.issubset(t.columns):
+        holding = (
+            pd.to_datetime(t.exit_time, utc=True)
+            - pd.to_datetime(t.entry_time, utc=True)
+        ).dt.total_seconds() / 60
+    else:
+        holding = pd.Series([float("nan")] * len(t), index=t.index)
     return {
         "trades": int(len(t)),
         "wins": int(len(w)),
@@ -183,6 +192,6 @@ def summarize(t):
         "max_drawdown_pct": round(float(dd), 3),
         "avg_trade_bps": round(float(t.net_bps.mean()), 3),
         "funding_cost_pct": round(float(t.funding_cost_pct.sum()), 4),
-        "avg_holding_minutes": round(float(t.holding_minutes.mean()), 2),
-        "median_holding_minutes": round(float(t.holding_minutes.median()), 2),
+        "avg_holding_minutes": round(float(holding.mean()), 2) if holding.notna().any() else None,
+        "median_holding_minutes": round(float(holding.median()), 2) if holding.notna().any() else None,
     }
