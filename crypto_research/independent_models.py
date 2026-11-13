@@ -57,9 +57,9 @@ def _add_segment_indicators(d: pd.DataFrame) -> pd.DataFrame:
     d["bb_width"] = (d.bb_upper - d.bb_lower) / d.bb_mid.replace(0, np.nan)
 
     typical = (high + low + close) / 3.0
-    session = pd.Series(d.index.floor("D"), index=d.index)
-    cum_pv = (typical * d.volume).groupby(session).cumsum()
-    cum_vol = d.volume.groupby(session).cumsum()
+    session_key = pd.MultiIndex.from_arrays([d.index.floor("D"), d["data_segment"]])
+    cum_pv = (typical * d.volume).groupby(session_key).cumsum()
+    cum_vol = d.volume.groupby(session_key).cumsum()
     d["session_vwap"] = cum_pv / cum_vol.replace(0, np.nan)
 
     hl2 = (high + low) / 2.0
@@ -104,10 +104,12 @@ def prepare_bars(raw: pd.DataFrame, timeframe: str) -> pd.DataFrame:
         raise ValueError("Raw bars must have a strictly increasing, duplicate-free index")
     bar_delta = pd.Timedelta(TIMEFRAME_RULES[timeframe])
     segment_ids = d.index.to_series().diff().ne(bar_delta).cumsum()
-    d = pd.concat([
-        _add_segment_indicators(segment.copy())
-        for _, segment in d.groupby(segment_ids, sort=False)
-    ]).sort_index()
+    prepared_segments = []
+    for segment_id, segment in d.groupby(segment_ids, sort=False):
+        segment = segment.copy()
+        segment["data_segment"] = int(segment_id)
+        prepared_segments.append(_add_segment_indicators(segment))
+    d = pd.concat(prepared_segments).sort_index()
     _BAR_CACHE[cache_key] = d
     return d.copy()
 
@@ -183,12 +185,26 @@ def make_independent_signals(
         if benchmark_raw is None:
             raise ValueError(f"{model} requires BTC benchmark candles")
         benchmark = prepare_bars(benchmark_raw, timeframe)
-        btc_close = benchmark.close.reindex(
-            d.index, method="ffill", tolerance=pd.Timedelta(TIMEFRAME_RULES[timeframe])
+        bar_delta = pd.Timedelta(TIMEFRAME_RULES[timeframe])
+        btc_close = benchmark.close.reindex(d.index, method="ffill", tolerance=bar_delta)
+        btc_segment = benchmark.data_segment.reindex(
+            d.index, method="ffill", tolerance=bar_delta
+        )
+        # Returns must stay inside uninterrupted altcoin and BTC data segments.
+        group_key = (
+            d["data_segment"].astype("string")
+            + "|"
+            + btc_segment.astype("Int64").astype("string")
+        ).where(btc_close.notna() & btc_segment.notna())
+        asset_return = d.close.groupby(group_key, dropna=True).pct_change(
+            20 if model == "M10" else 3, fill_method=None
+        )
+        btc_return = btc_close.groupby(group_key, dropna=True).pct_change(
+            20 if model == "M10" else 3, fill_method=None
         )
         if model == "M10":
             lookback = 20
-            relative = d.close.pct_change(lookback) - btc_close.pct_change(lookback)
+            relative = asset_return - btc_return
             long = (relative >= 0.01) & (d.close > d.ema50) & (d.ema50 > d.ema200)
             short = (relative <= -0.01) & (d.close < d.ema50) & (d.ema50 < d.ema200)
             _set_atr_stops(d, long, short, 2.0)
@@ -196,8 +212,8 @@ def make_independent_signals(
             lookback = 3
             # BTC impulse must precede the altcoin response window. Shift
             # by one full lookback so the two return windows do not overlap.
-            btc_impulse = btc_close.pct_change(lookback).shift(lookback)
-            asset_move = d.close.pct_change(lookback)
+            btc_impulse = btc_return.groupby(group_key, dropna=True).shift(lookback)
+            asset_move = asset_return
             long = (btc_impulse >= 0.006) & ((btc_impulse - asset_move) >= 0.003) & (d.close > d.ema20)
             short = (btc_impulse <= -0.006) & ((asset_move - btc_impulse) >= 0.003) & (d.close < d.ema20)
             _set_atr_stops(d, long, short, 2.0)
@@ -227,8 +243,9 @@ def make_independent_signals(
         price_change_min = float(parameters.get("price_change_min", 0.005))
         taker_threshold = float(parameters.get("taker_threshold", 0.55))
         stop_multiple = float(parameters.get("stop_atr", 2.0))
-        oi_change = oi.pct_change(lookback, fill_method=None)
-        price_change = d.close.pct_change(lookback, fill_method=None)
+        # Do not calculate OI or price changes across a missing-candle segment.
+        oi_change = oi.groupby(d["data_segment"]).pct_change(lookback, fill_method=None)
+        price_change = d.close.groupby(d["data_segment"]).pct_change(lookback, fill_method=None)
         long = (oi_change >= oi_change_min) & (price_change >= price_change_min) & (d.taker_ratio >= taker_threshold)
         short = (oi_change >= oi_change_min) & (price_change <= -price_change_min) & (d.taker_ratio <= 1.0 - taker_threshold)
         _set_atr_stops(d, long, short, stop_multiple)

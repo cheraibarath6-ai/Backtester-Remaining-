@@ -163,3 +163,46 @@ def test_prepare_bars_resets_indicator_history_after_missing_bucket():
     assert np.isfinite(post.atr.iloc[13])
     assert post.ema200.iloc[:199].isna().all()
     assert np.isfinite(post.ema200.iloc[199])
+
+
+
+def test_m11_does_not_calculate_oi_or_price_change_across_a_data_gap():
+    index = pd.date_range("2024-01-01", periods=1800, freq="1min", tz="UTC")
+    missing = pd.date_range("2024-01-01 10:00:00", periods=5, freq="1min", tz="UTC")
+    index = index.difference(missing)
+    close = np.full(len(index), 100.0)
+    post = index >= pd.Timestamp("2024-01-01 10:05:00", tz="UTC")
+    post_steps = np.arange(int(post.sum()))
+    close[post] = 100.0 * (1.0 + 0.01 * post_steps / 60.0)
+    open_ = np.r_[close[0], close[:-1]]
+    volume = np.full(len(index), 100.0)
+    raw = pd.DataFrame({
+        "open": open_,
+        "high": np.maximum(open_, close) * 1.001,
+        "low": np.minimum(open_, close) * 0.999,
+        "close": close,
+        "volume": volume,
+        "quote_volume": volume * close,
+        "trades": np.full(len(index), 10),
+        "taker_buy_base": volume * 0.60,
+        "taker_buy_quote": volume * 0.60 * close,
+    }, index=index)
+    bars = prepare_bars(raw, "5m")
+    first_post_gap = pd.Timestamp("2024-01-01 10:10:00", tz="UTC")
+    oi = pd.DataFrame(
+        {"sum_open_interest_value": np.where(
+            bars.index >= first_post_gap, 200.0, 100.0
+        )},
+        index=bars.index,
+    )
+    signals = make_independent_signals(
+        raw, "M11", "5m", open_interest=oi,
+        parameters={
+            "oi_lookback": 12,
+            "oi_change_min": 0.01,
+            "price_change_min": 0.005,
+            "taker_threshold": 0.55,
+        },
+    )
+    assert signals.data_segment.nunique() == 2
+    assert signals.loc[first_post_gap:, "signal"].eq(0).all()
