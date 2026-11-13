@@ -202,12 +202,14 @@ def _funding_from_official_api(symbol, start, end):
 
 
 def acquire_funding(symbol, start, end, root=Path("data")):
-    """Prefer Binance's official monthly archive, then official API, then labelled fallback."""
+    """Prefer official Binance monthly funding archives, with coverage checks."""
     archive_parts = []
+    found_months = []
+    expected_months = [month.strftime("%Y-%m") for month in months(start, end)]
     archive_error = None
+
     try:
-        for month in months(start, end):
-            ym = month.strftime("%Y-%m")
+        for ym in expected_months:
             name = f"{symbol}-fundingRate-{ym}.zip"
             url = f"{BASE}/fundingRate/{symbol}/{name}"
             path = get_zip(
@@ -217,28 +219,54 @@ def acquire_funding(symbol, start, end, root=Path("data")):
             )
             if path:
                 archive_parts.append(_read_funding_zip(path))
+                found_months.append(ym)
+
         if archive_parts:
-            out = pd.concat(archive_parts).sort_index()
-            out = out[~out.index.duplicated(keep="last")]
-            out = out.loc[
-                (out.index >= pd.Timestamp(start, tz="UTC"))
-                & (out.index < pd.Timestamp(end, tz="UTC"))
+            archive = pd.concat(archive_parts).sort_index()
+            archive = archive[~archive.index.duplicated(keep="last")]
+            archive = archive.loc[
+                (archive.index >= pd.Timestamp(start, tz="UTC"))
+                & (archive.index < pd.Timestamp(end, tz="UTC"))
             ]
-            if not out.empty:
-                out.attrs["source"] = "binance_vision_official_monthly_archive"
-                return out
+            missing_months = sorted(set(expected_months) - set(found_months))
+            if not archive.empty and not missing_months:
+                archive.attrs["source"] = "binance_vision_official_monthly_archive"
+                archive.attrs["missing_archive_months"] = []
+                return archive
+        else:
+            archive = pd.DataFrame(columns=["funding_rate", "mark_price"])
+            missing_months = list(expected_months)
     except Exception as error:
         archive_error = error
+        archive = pd.DataFrame(columns=["funding_rate", "mark_price"])
+        missing_months = list(expected_months)
 
+    # If official monthly files are absent or malformed, ask the official API
+    # for the complete requested range and merge it with verified archive rows.
     try:
-        out = _funding_from_official_api(symbol, start, end)
+        api = _funding_from_official_api(symbol, start, end)
+        if not archive.empty:
+            out = pd.concat([archive, api]).sort_index()
+            out = out[~out.index.duplicated(keep="last")]
+            source = "binance_vision_archive_plus_official_api"
+        else:
+            out = api
+            source = "binance_official_api"
         out = out.loc[
             (out.index >= pd.Timestamp(start, tz="UTC"))
             & (out.index < pd.Timestamp(end, tz="UTC"))
         ]
-        out.attrs["source"] = "binance_official_api"
+        out.attrs["source"] = source
+        out.attrs["missing_archive_months"] = missing_months
         return out
     except Exception as official_error:
+        if not archive.empty:
+            archive.attrs["source"] = "binance_vision_official_monthly_archive_partial"
+            archive.attrs["missing_archive_months"] = missing_months
+            archive.attrs["archive_error"] = str(archive_error) if archive_error else None
+            archive.attrs["official_api_error"] = str(official_error)
+            return archive
+
         fallback = (
             "https://huggingface.co/datasets/Crypt-dataset/Binance_Top40/"
             f"resolve/main/funding/{symbol}.parquet"
@@ -264,6 +292,7 @@ def acquire_funding(symbol, start, end, root=Path("data")):
         out.attrs["source"] = "third_party_huggingface_archive_unverified"
         out.attrs["official_archive_error"] = str(archive_error) if archive_error else None
         out.attrs["official_api_error"] = str(official_error)
+        out.attrs["missing_archive_months"] = missing_months
         return out
 
 
