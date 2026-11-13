@@ -8,76 +8,105 @@ from .backtest import summarize
 import numpy as np
 
 def fast_backtest(bars,funding,symbol,model,timeframe,fee_bps=5.0,slippage_bps=2.0,rr=2.0,max_hold_bars=288):
-    """Array-based equivalent of run_backtest; avoids repeated pandas iloc in long multi-year sweeps."""
+    """Array-based executor with next-open fills and conservative entry-bar checks."""
     if bars.empty or len(bars)<2:
         return pd.DataFrame()
+    if timeframe not in ("5m", "15m"):
+        raise ValueError(f"Unsupported PFI timeframe: {timeframe}")
+
     ix=bars.index
     ns=ix.asi8
-    op=bars["open"].to_numpy(dtype=float); hi=bars["high"].to_numpy(dtype=float)
-    lo=bars["low"].to_numpy(dtype=float); cl=bars["close"].to_numpy(dtype=float)
+    op=bars["open"].to_numpy(dtype=float)
+    hi=bars["high"].to_numpy(dtype=float)
+    lo=bars["low"].to_numpy(dtype=float)
+    cl=bars["close"].to_numpy(dtype=float)
     sig=bars["signal"].fillna(0).to_numpy(dtype=np.int8)
     stp=bars["stop"].to_numpy(dtype=float)
+
     if funding is not None and not funding.empty:
+        funding=funding.sort_index()
         fns=funding.index.asi8
         fr=funding["funding_rate"].to_numpy(dtype=float)
-        fc=np.concatenate(([0.0],np.cumsum(fr)))
+        fc=np.concatenate(([0.0],np.cumsum(np.nan_to_num(fr))))
     else:
-        fns=np.array([],dtype=np.int64); fc=np.array([0.0])
-    delta_ns=(5 if timeframe=="5m" else 15)*60*1_000_000_000
+        fns=np.array([],dtype=np.int64)
+        fc=np.array([0.0])
+
+    bar_minutes=5 if timeframe=="5m" else 15
+    delta_ns=bar_minutes*60*1_000_000_000
     fee=2*fee_bps/10000
     slip=slippage_bps/10000
-    side=0; entry=stop=target=0.0; entry_ns=0; entry_i=0
+    side=0
+    entry=stop=target=0.0
+    entry_ns=0
+    entry_i=0
     trades=[]
+
+    def close_trade(i, exit_px, reason, held):
+        nonlocal side
+        ts=int(ns[i])
+        fill=float(exit_px)*(1-side*slip)
+        gross=side*(fill-entry)/entry
+        if len(fns):
+            fs=np.searchsorted(fns,entry_ns,side="left")
+            fe=np.searchsorted(fns,ts,side="right")
+            funding_cost=side*(fc[fe]-fc[fs])
+        else:
+            funding_cost=0.0
+        net=gross-fee-funding_cost
+        risk=abs(entry-stop)/entry
+        trades.append({
+            "symbol":symbol,"model":model,"timeframe":timeframe,
+            "side":"LONG" if side==1 else "SHORT",
+            "entry_time":str(pd.Timestamp(entry_ns,tz="UTC")),
+            "exit_time":str(ix[i]),"entry":entry,"exit":fill,"stop":stop,
+            "target":target,"exit_reason":reason,"gross_return_pct":gross*100,
+            "fees_pct":fee*100,"funding_cost_pct":funding_cost*100,
+            "net_return_pct":net*100,"net_bps":net*10000,
+            "net_R":net/risk if risk else 0.0,
+            "holding_bars":int(held),"holding_minutes":int(held*bar_minutes),
+        })
+        side=0
+
     for i in range(1,len(ix)):
-        ts=int(ns[i]); was_open=(side!=0)
-        if was_open:
-            held=i-entry_i
-            stop_hit=(lo[i]<=stop) if side==1 else (hi[i]>=stop)
-            target_hit=(hi[i]>=target) if side==1 else (lo[i]<=target)
-            exit_px=None; reason=None
-            if stop_hit: exit_px=stop; reason="STOP"
-            elif target_hit: exit_px=target; reason="TARGET"
-            elif held>=max_hold_bars: exit_px=cl[i]; reason="TIME"
-            if exit_px is not None:
-                fill=exit_px*(1-side*slip)
-                gross=side*(fill-entry)/entry
-                if len(fns):
-                    fs=np.searchsorted(fns,entry_ns,side="right")
-                    fe=np.searchsorted(fns,ts,side="right")
-                    fund_cost=side*(fc[fe]-fc[fs])
-                else: fund_cost=0.0
-                net=gross-fee-fund_cost
-                risk=abs(entry-stop)/entry
-                trades.append({"symbol":symbol,"model":model,"timeframe":timeframe,
-                  "side":"LONG" if side==1 else "SHORT","entry_time":str(pd.Timestamp(entry_ns,tz="UTC")),
-                  "exit_time":str(ix[i]),"entry":entry,"exit":fill,"stop":stop,"target":target,
-                  "exit_reason":reason,"gross_return_pct":gross*100,"fees_pct":fee*100,
-                  "funding_cost_pct":fund_cost*100,"net_return_pct":net*100,
-                  "net_bps":net*10000,"net_R":net/risk if risk else 0.0})
-                side=0
-        if not was_open and side==0 and sig[i-1]!=0:
-            new_side=int(sig[i-1]); raw_entry=op[i]
-            new_entry=raw_entry*(1+new_side*slip)
+        # Prior completed-bar signal fills at this bar's open.
+        if side==0 and sig[i-1]!=0:
+            new_side=int(sig[i-1])
+            new_entry=op[i]*(1+new_side*slip)
             new_stop=stp[i-1]
             if not np.isfinite(new_stop) or (new_side==1 and new_stop>=new_entry) or (new_side==-1 and new_stop<=new_entry):
                 continue
-            side=new_side; entry=new_entry; stop=float(new_stop)
+            side=new_side
+            entry=float(new_entry)
+            stop=float(new_stop)
             target=entry+side*rr*abs(entry-stop)
-            entry_ns=ts-delta_ns; entry_i=i
+            entry_ns=int(ns[i]-delta_ns)
+            entry_i=i
+
+        if side==0:
+            continue
+
+        held=i-entry_i+1
+        stop_hit=(lo[i]<=stop) if side==1 else (hi[i]>=stop)
+        target_hit=(hi[i]>=target) if side==1 else (lo[i]<=target)
+        exit_px=None
+        reason=None
+        if stop_hit:
+            exit_px=stop
+            reason="STOP"
+        elif target_hit:
+            exit_px=target
+            reason="TARGET"
+        elif max_hold_bars is not None and held>=max_hold_bars:
+            exit_px=cl[i]
+            reason="TIME"
+        if exit_px is not None:
+            close_trade(i,exit_px,reason,held)
+
     if side!=0:
-        i=len(ix)-1; ts=int(ns[i]); fill=cl[i]*(1-side*slip)
-        gross=side*(fill-entry)/entry
-        if len(fns):
-            fs=np.searchsorted(fns,entry_ns,side="right"); fe=np.searchsorted(fns,ts,side="right")
-            fund_cost=side*(fc[fe]-fc[fs])
-        else: fund_cost=0.0
-        net=gross-fee-fund_cost; risk=abs(entry-stop)/entry
-        trades.append({"symbol":symbol,"model":model,"timeframe":timeframe,
-          "side":"LONG" if side==1 else "SHORT","entry_time":str(pd.Timestamp(entry_ns,tz="UTC")),
-          "exit_time":str(ix[i]),"entry":entry,"exit":fill,"stop":stop,"target":target,
-          "exit_reason":"END_OF_SAMPLE","gross_return_pct":gross*100,"fees_pct":fee*100,
-          "funding_cost_pct":fund_cost*100,"net_return_pct":net*100,
-          "net_bps":net*10000,"net_R":net/risk if risk else 0.0})
+        i=len(ix)-1
+        held=len(ix)-entry_i
+        close_trade(i,cl[i],"END_OF_SAMPLE",held)
     return pd.DataFrame(trades)
 
 
