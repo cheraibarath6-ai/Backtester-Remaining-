@@ -58,6 +58,33 @@ def test_perpetual_funding_is_applied_to_non_m5_models():
     assert abs(trades.iloc[0].net_return_pct + 0.1) < 1e-9
 
 
+def test_funding_uses_settlement_mark_not_entry_notional():
+    bars = _bars(entry_high=111.0)
+    funding = pd.DataFrame(
+        {"funding_rate": [0.001], "mark_price": [110.0]},
+        index=pd.DatetimeIndex(["2024-01-01 00:10:00"], tz="UTC"),
+    )
+    trades = run_backtest(
+        bars, funding, "BTCUSDT", "M6", "5m",
+        fee_bps=0, slippage_bps=0, rr=2,
+    )
+    assert len(trades) == 1
+    assert trades.iloc[0].exit_reason == "TARGET"
+    assert abs(trades.iloc[0].funding_cost_pct - 0.11) < 1e-9
+    assert abs(trades.iloc[0].net_return_pct - 9.89) < 1e-9
+
+
+def test_exit_fee_uses_exit_notional():
+    trades = run_backtest(
+        _bars(entry_high=111.0), None, "BTCUSDT", "M6", "5m",
+        fee_bps=5, slippage_bps=0, rr=2,
+    )
+    assert len(trades) == 1
+    assert trades.iloc[0].exit_reason == "TARGET"
+    assert abs(trades.iloc[0].fees_pct - 0.105) < 1e-9
+    assert abs(trades.iloc[0].net_return_pct - 9.895) < 1e-9
+
+
 def test_summary_reports_holding_time():
     trades = run_backtest(
         _bars(entry_high=105.0), None, "BTCUSDT", "M6", "5m",
