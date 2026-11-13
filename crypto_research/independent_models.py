@@ -123,6 +123,7 @@ def make_independent_signals(
     timeframe: str,
     benchmark_raw: pd.DataFrame | None = None,
     open_interest: pd.DataFrame | None = None,
+    parameters: dict | None = None,
 ) -> pd.DataFrame:
     """
     Standalone candidate strategies M6-M15. No cross-model voting or filters.
@@ -133,6 +134,7 @@ def make_independent_signals(
     """
     if model not in INDEPENDENT_MODELS:
         raise ValueError(f"Unsupported independent model: {model}")
+    parameters = parameters or {}
     d = prepare_bars(raw, timeframe)
     d["signal"] = 0
     d["stop"] = np.nan
@@ -140,12 +142,14 @@ def make_independent_signals(
     atr = d.atr.replace(0, np.nan)
 
     if model == "M6":
-        n = 55
+        n = int(parameters.get("donchian_period", 55))
+        volume_min = float(parameters.get("volume_ratio_min", 1.0))
+        stop_multiple = float(parameters.get("stop_atr", 2.5))
         prior_high = d.high.shift(1).rolling(n, min_periods=n).max()
         prior_low = d.low.shift(1).rolling(n, min_periods=n).min()
-        long = (d.close > prior_high) & (d.volume_ratio >= 1.0)
-        short = (d.close < prior_low) & (d.volume_ratio >= 1.0)
-        _set_atr_stops(d, long, short, 2.5)
+        long = (d.close > prior_high) & (d.volume_ratio >= volume_min)
+        short = (d.close < prior_low) & (d.volume_ratio >= volume_min)
+        _set_atr_stops(d, long, short, stop_multiple)
 
     elif model == "M7":
         long = (d.bb_z <= -2.0) & (d.rsi <= 35)
@@ -213,11 +217,17 @@ def make_independent_signals(
             d.index, method="ffill",
             tolerance=pd.Timedelta(minutes=tf_minutes),
         )
-        oi_change = oi.pct_change(12, fill_method=None)
-        price_change = d.close.pct_change(12, fill_method=None)
-        long = (oi_change >= 0.01) & (price_change >= 0.005) & (d.taker_ratio >= 0.55)
-        short = (oi_change >= 0.01) & (price_change <= -0.005) & (d.taker_ratio <= 0.45)
-        _set_atr_stops(d, long, short, 2.0)
+        lookback = int(parameters.get("oi_lookback", 12))
+        oi_change_min = float(parameters.get("oi_change_min", 0.01))
+        price_change_min = float(parameters.get("price_change_min", 0.005))
+        taker_long_min = float(parameters.get("taker_long_min", 0.55))
+        taker_short_max = float(parameters.get("taker_short_max", 0.45))
+        stop_multiple = float(parameters.get("stop_atr", 2.0))
+        oi_change = oi.pct_change(lookback, fill_method=None)
+        price_change = d.close.pct_change(lookback, fill_method=None)
+        long = (oi_change >= oi_change_min) & (price_change >= price_change_min) & (d.taker_ratio >= taker_long_min)
+        short = (oi_change >= oi_change_min) & (price_change <= -price_change_min) & (d.taker_ratio <= taker_short_max)
+        _set_atr_stops(d, long, short, stop_multiple)
 
     elif model == "M12":
         prior_high = d.high.shift(1).rolling(20, min_periods=20).max()
