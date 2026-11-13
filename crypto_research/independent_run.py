@@ -54,6 +54,11 @@ def _evaluate(
     benchmark_raw: pd.DataFrame | None,
     oi: pd.DataFrame | None,
 ) -> tuple[dict, pd.DataFrame, list[dict]]:
+    if model == "M11" and (oi is None or oi.empty):
+        return {
+            "status": "DATA_GATED",
+            "skip_reason": "Historical Binance open-interest metrics were unavailable for this symbol/period",
+        }, pd.DataFrame(), []
     if model in ("M1", "M2", "M4", "M5"):
         if timeframe not in ("5m", "15m"):
             return {"status": "BASELINE_TIMEFRAME_UNSUPPORTED", "skip_reason": "Existing PFI baseline implementation supports 5m/15m only"}, pd.DataFrame(), []
