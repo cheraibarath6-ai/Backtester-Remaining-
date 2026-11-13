@@ -19,6 +19,8 @@ on:
       - "crypto_research/cost_stress_run.py"
       - "crypto_research/aggregate_cost_stress.py"
       - "tests/test_cost_stress.py"
+      - "tests/test_combinations.py"
+      - "tests/test_walkforward.py"
       - "crypto_research/backtest.py"
       - "crypto_research/metrics.py"
       - "crypto_research/combination_run.py"
