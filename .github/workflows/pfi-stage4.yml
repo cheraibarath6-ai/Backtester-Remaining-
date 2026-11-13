@@ -4,6 +4,7 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/pfi-stage4.yml"
+      - "crypto_research/pfi_stage4.py"
   workflow_dispatch:
     inputs:
       start:
