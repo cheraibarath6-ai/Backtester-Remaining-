@@ -240,8 +240,11 @@ def main():
     oi_quality = None
     try:
         oi_end = end_ts.floor("5min")
-        oi = acquire_recent_open_interest(symbol, start_ts, oi_end)
-        oi_quality = metrics_quality_report(oi, symbol, start_ts, oi_end)
+        oi_start = max(start_ts, evaluation_start - pd.Timedelta(days=5))
+        oi = acquire_recent_open_interest(symbol, oi_start, oi_end)
+        oi_quality = metrics_quality_report(
+            oi, symbol, _naive_utc_text(oi_start), _naive_utc_text(oi_end)
+        )
         oi_quality["source"] = oi.attrs.get("source", "unknown")
         oi.to_csv(out / f"{symbol}_forward_open_interest.csv")
     except Exception as error:
