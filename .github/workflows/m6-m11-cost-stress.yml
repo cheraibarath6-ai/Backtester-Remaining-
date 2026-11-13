@@ -9,6 +9,7 @@ on:
       - "crypto_research/aggregate_cost_stress.py"
       - "tests/test_cost_stress.py"
       - "crypto_research/backtest.py"
+      - "crypto_research/metrics.py"
       - "crypto_research/combination_run.py"
       - "crypto_research/independent_models.py"
   workflow_dispatch:
