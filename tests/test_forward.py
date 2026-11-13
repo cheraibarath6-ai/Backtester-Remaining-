@@ -81,8 +81,8 @@ def _write_zip(path, filename, content):
 def test_daily_kline_archive_parser_handles_header_and_official_usdm_columns(tmp_path):
     timestamp = int(pd.Timestamp("2026-11-01 00:00:00", tz="UTC").timestamp() * 1000)
     csv = (
-        "open_time,open,high,low,close,volume,close_time,quote_asset_volume,"
-        "number_of_trades,taker_buy_base_asset_volume,taker_buy_quote_asset_volume,ignore\n"
+        "open_time,open,high,low,close,volume,close_time,quote_volume,"
+        "count,taker_buy_volume,taker_buy_quote_volume,ignore\n"
         f"{timestamp},100,102,99,101,12,{timestamp + 59999},1212,25,7,707,0\n"
     )
     path = tmp_path / "ETHUSDT-1m-2026-11-01.zip"
