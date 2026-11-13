@@ -51,3 +51,35 @@ M10 and M13 use BTC only as a reference series; BTC is not traded by those two m
 - The first-pass strategy parameters are research baselines, not optimized settings.
 - M11 currently tests open-interest pressure. A separately validated liquidation-event feed is not yet integrated.
 - Binance Vision's published data terms restrict its use to non-commercial research and personal non-production historical backtesting. Do not use these datasets for live proprietary execution or commercial signal distribution without separate rights.
+
+
+## Second phase: M6/M11 one-factor sensitivity
+
+The first corrected screen showed that M6 and M11 deserve diagnosis, not selection. Both 4h strategies exited predominantly at the 24-hour time cap (roughly 77-81% for M6 and 70-77% for M11 in the first completed BTC/ETH/SOL samples). A separate sweep runner now varies one factor at a time, with each configuration remaining an independent strategy stream.
+
+### M6 factors
+
+- Donchian lookback: 20, 55, 100 bars.
+- Initial ATR stop: 2.0, 2.5, 3.0 ATR.
+- Volume ratio threshold: 0.8, 1.0, 1.2.
+- Planned reward/risk: 1.5R, 2R, 3R.
+- Maximum holding horizon: 24, 48, 72, 168 hours.
+- Separate 2.5 ATR trailing-stop exit variant; trailing levels are updated only after a completed bar and can trigger from the next bar. Initial risk is retained for R-multiple calculation.
+
+### M11 factors
+
+- OI lookback: 6, 12, 24 bars.
+- OI increase threshold: 0.5%, 1.0%, 1.5%.
+- Directional price threshold: 0.25%, 0.5%, 1.0%.
+- Symmetric taker-imbalance threshold: 0.52, 0.55, 0.60.
+- Initial ATR stop: 1.5, 2.0, 2.5 ATR.
+- Planned reward/risk: 1.5R, 2R, 3R.
+- Maximum holding horizon: 24, 48, 72, 168 hours.
+
+The sweep uses 1h and 4h, both long and short, seven liquid USD-M symbols, 5 bps taker fees per side, 2 bps slippage per side, and actual funding cashflows. It reports development (2021-2024), 2025 validation and 2026 YTD separately. The 2026 figures have already been viewed in the first-pass report, so they are treated as a retrospective holdout and are not used to tune or select parameters.
+
+### Accounting audit update
+
+- Entry and exit fees are charged on their respective executed notionals.
+- Funding cashflows use the settlement mark price when available; otherwise the latest completed strategy-bar close at or before the funding timestamp is used, converted to entry-notional terms.
+- Cross-symbol reports now distinguish notional-based PF from R-based PF and report per-symbol drawdown ranges. They explicitly do not claim a capital-weighted portfolio return or portfolio drawdown.
