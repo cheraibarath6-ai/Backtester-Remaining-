@@ -220,13 +220,12 @@ def make_independent_signals(
         lookback = int(parameters.get("oi_lookback", 12))
         oi_change_min = float(parameters.get("oi_change_min", 0.01))
         price_change_min = float(parameters.get("price_change_min", 0.005))
-        taker_long_min = float(parameters.get("taker_long_min", 0.55))
-        taker_short_max = float(parameters.get("taker_short_max", 0.45))
+        taker_threshold = float(parameters.get("taker_threshold", 0.55))
         stop_multiple = float(parameters.get("stop_atr", 2.0))
         oi_change = oi.pct_change(lookback, fill_method=None)
         price_change = d.close.pct_change(lookback, fill_method=None)
-        long = (oi_change >= oi_change_min) & (price_change >= price_change_min) & (d.taker_ratio >= taker_long_min)
-        short = (oi_change >= oi_change_min) & (price_change <= -price_change_min) & (d.taker_ratio <= taker_short_max)
+        long = (oi_change >= oi_change_min) & (price_change >= price_change_min) & (d.taker_ratio >= taker_threshold)
+        short = (oi_change >= oi_change_min) & (price_change <= -price_change_min) & (d.taker_ratio <= 1.0 - taker_threshold)
         _set_atr_stops(d, long, short, stop_multiple)
 
     elif model == "M12":
