@@ -8,8 +8,10 @@ def test_m6_combinations_keep_model_independent_and_include_long_holds():
     assert "D100_STOP2_RR3_H168" in names
     assert "TRAIL25_H168" in names
     assert "BASELINE_H24" in names
+    assert "HOLD_48H" in names
     assert next(p for p in profiles if p["variant"] == "BASELINE_H24")["hold_hours"] == 24.0
-    assert all(p["hold_hours"] >= 120 for p in profiles if p["variant"] != "BASELINE_H24")
+    assert next(p for p in profiles if p["variant"] == "HOLD_48H")["hold_hours"] == 48.0
+    assert all(p["hold_hours"] >= 120 for p in profiles if p["variant"] not in {"BASELINE_H24", "HOLD_48H"})
 
 
 def test_m11_combinations_keep_oi_and_price_thresholds_explicit():
