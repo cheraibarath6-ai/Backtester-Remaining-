@@ -58,6 +58,63 @@ def test_perpetual_funding_is_applied_to_non_m5_models():
     assert abs(trades.iloc[0].net_return_pct + 0.1) < 1e-9
 
 
+def test_funding_uses_settlement_mark_not_entry_notional():
+    bars = _bars(entry_high=111.0)
+    funding = pd.DataFrame(
+        {"funding_rate": [0.001], "mark_price": [110.0]},
+        index=pd.DatetimeIndex(["2024-01-01 00:10:00"], tz="UTC"),
+    )
+    trades = run_backtest(
+        bars, funding, "BTCUSDT", "M6", "5m",
+        fee_bps=0, slippage_bps=0, rr=2,
+    )
+    assert len(trades) == 1
+    assert trades.iloc[0].exit_reason == "TARGET"
+    assert abs(trades.iloc[0].funding_cost_pct - 0.11) < 1e-9
+    assert abs(trades.iloc[0].net_return_pct - 9.89) < 1e-9
+
+
+def test_exit_fee_uses_exit_notional():
+    trades = run_backtest(
+        _bars(entry_high=111.0), None, "BTCUSDT", "M6", "5m",
+        fee_bps=5, slippage_bps=0, rr=2,
+    )
+    assert len(trades) == 1
+    assert trades.iloc[0].exit_reason == "TARGET"
+    assert abs(trades.iloc[0].fees_pct - 0.105) < 1e-9
+    assert abs(trades.iloc[0].net_return_pct - 9.895) < 1e-9
+
+
+def test_atr_trailing_stop_is_activated_only_after_bar_close():
+    index = pd.date_range("2024-01-01 00:05:00", periods=4, freq="5min", tz="UTC")
+    bars = pd.DataFrame(
+        {
+            "open": [100.0, 100.0, 101.0, 104.0],
+            "high": [101.0, 110.0, 105.0, 105.0],
+            "low": [99.0, 99.0, 99.0, 103.0],
+            "close": [100.0, 108.0, 103.0, 104.0],
+            "signal": [1, 0, 0, 0],
+            "stop": [90.0, float("nan"), float("nan"), float("nan")],
+            "target": [float("nan")] * 4,
+            "atr": [5.0] * 4,
+        },
+        index=index,
+    )
+    trades = run_backtest(
+        bars, None, "BTCUSDT", "M6", "5m",
+        fee_bps=0, slippage_bps=0, rr=2,
+        trailing_atr_multiple=2.0,
+    )
+    assert len(trades) == 1
+    trade = trades.iloc[0]
+    assert trade.exit_reason == "STOP"
+    assert trade.holding_bars == 2
+    assert trade.exit == 100.0
+    assert trade.initial_stop == 90.0
+    assert trade.stop == 100.0
+    assert abs(trade.net_R) < 1e-9
+
+
 def test_summary_reports_holding_time():
     trades = run_backtest(
         _bars(entry_high=105.0), None, "BTCUSDT", "M6", "5m",
