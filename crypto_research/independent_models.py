@@ -178,10 +178,12 @@ def make_independent_signals(
     elif model == "M11":
         if open_interest is None or open_interest.empty:
             raise ValueError("M11 requires historical open-interest metrics; no price-only proxy is permitted")
-        oi_col = "open_interest_value" if "open_interest_value" in open_interest.columns else "sumOpenInterestValue"
-        if oi_col not in open_interest.columns:
-            oi_col = "open_interest" if "open_interest" in open_interest.columns else "sumOpenInterest"
-        if oi_col not in open_interest.columns:
+        oi_candidates = (
+            "open_interest_value", "sum_open_interest_value", "sumOpenInterestValue",
+            "open_interest", "sum_open_interest", "sumOpenInterest",
+        )
+        oi_col = next((column for column in oi_candidates if column in open_interest.columns), None)
+        if oi_col is None:
             raise ValueError("M11 open-interest data has no recognized OI field")
         oi = pd.to_numeric(open_interest[oi_col], errors="coerce").sort_index()
         tf_minutes = {"1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30,
