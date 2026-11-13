@@ -26,6 +26,8 @@ on:
       - "tests/test_sensitivity.py"
       - "tests/test_aggregate_independent.py"
       - "tests/test_cost_stress.py"
+      - "tests/test_combinations.py"
+      - "tests/test_walkforward.py"
       - ".github/workflows/funding-audit-tests.yml"
 
 permissions:
