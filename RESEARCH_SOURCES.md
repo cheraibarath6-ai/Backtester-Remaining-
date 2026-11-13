@@ -98,3 +98,12 @@ The above repositories are implementation references, not proof of a profitable 
 - [DTennant/crypto-swing-backtest](https://github.com/DTennant/crypto-swing-backtest), [crazystorm720/algo_trading](https://github.com/crazystorm720/algo_trading), and [flatmoonsociety/fmzquant-strategies-english](https://github.com/flatmoonsociety/fmzquant-strategies-english) — public repositories with relevant Bollinger/RSI or squeeze examples, but no repository-level licence was found in the inspected metadata. They are idea-only and are not sources for copied code.
 - [freqtrade/freqtrade-strategies](https://github.com/freqtrade/freqtrade-strategies) — official GPL-3.0 repository. Its current tree includes `user_data/strategies/berlinguyinca/ADXMomentum.py` and `AwesomeMacd.py`; both were inspected as rule references. GPL source is not copied into this project.
 - GitHub searches for "open interest taker ratio crypto strategy" and "regime switching crypto trading strategy" did not identify a clearly licensed, reproducible standalone USD-M futures implementation with a credible historical record. Unlicensed OI/regime examples remain idea-only; our M11/M12 implementations are independently authored and tested in this repository.
+
+
+## M13 falsification evidence — BTC/altcoin lead-lag
+
+- [nateemma/strategies — btc_corr/FINAL_REPORT.md](https://github.com/nateemma/strategies/blob/master/btc_corr/FINAL_REPORT.md) is a public BTC/altcoin correlation study. The repository is treated as GPL-3.0 research material for this programme; no code or report text is copied into the implementation.
+- The study uses Binance.US 1h data for BTC plus 12 alts over roughly 2024-04 to 2026-07, with a 4h cross-check. It reports lag-0 correlation as the peak for all pairs and both timeframes, with the lag-1h correlation collapsing to approximately zero (examples: SOL 0.747 to -0.016; ETH 0.791 to 0.004). Its conclusion is that BTC co-moves with alts rather than leading them at hourly resolution.
+- It reports a small BTC-feature predictive lift through volatility/trend-regime features, not lagged BTC returns. That is not evidence for the current M13 return-impulse rule.
+- Use: falsification prior only. M13 remains an independently tested, non-overlapping BTC-impulse/alt-response hypothesis; it is not assumed to work, and the external study's results are not imported as our performance.
+
