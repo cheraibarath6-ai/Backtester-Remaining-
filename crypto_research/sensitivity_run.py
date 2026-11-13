@@ -33,7 +33,7 @@ def sensitivity_profiles(model: str) -> list[dict]:
             {"variant": "HOLD_48H", "parameters": base.copy(), "rr": 2.0, "hold_hours": 48.0},
             {"variant": "HOLD_72H", "parameters": base.copy(), "rr": 2.0, "hold_hours": 72.0},
             {"variant": "HOLD_168H", "parameters": base.copy(), "rr": 2.0, "hold_hours": 168.0},
-            {"variant": "ATR_TRAIL_2.5", "parameters": base.copy(), "rr": 2.0, "hold_hours": 168.0, "trailing_atr_multiple": 2.5},
+            {"variant": "ATR_TRAIL_2.5", "parameters": base.copy(), "rr": 2.0, "hold_hours": 24.0, "trailing_atr_multiple": 2.5},
         ]
 
     if model == "M11":
@@ -41,8 +41,7 @@ def sensitivity_profiles(model: str) -> list[dict]:
             "oi_lookback": 12,
             "oi_change_min": 0.01,
             "price_change_min": 0.005,
-            "taker_long_min": 0.55,
-            "taker_short_max": 0.45,
+            "taker_threshold": 0.55,
             "stop_atr": 2.0,
         }
         return [
@@ -53,8 +52,8 @@ def sensitivity_profiles(model: str) -> list[dict]:
             {"variant": "OI_THRESHOLD_1.5PCT", "parameters": {**base, "oi_change_min": 0.015}, "rr": 2.0, "hold_hours": 24.0},
             {"variant": "PRICE_THRESHOLD_0.25PCT", "parameters": {**base, "price_change_min": 0.0025}, "rr": 2.0, "hold_hours": 24.0},
             {"variant": "PRICE_THRESHOLD_1.0PCT", "parameters": {**base, "price_change_min": 0.01}, "rr": 2.0, "hold_hours": 24.0},
-            {"variant": "TAKER_0.52", "parameters": {**base, "taker_long_min": 0.52, "taker_short_max": 0.48}, "rr": 2.0, "hold_hours": 24.0},
-            {"variant": "TAKER_0.60", "parameters": {**base, "taker_long_min": 0.60, "taker_short_max": 0.40}, "rr": 2.0, "hold_hours": 24.0},
+            {"variant": "TAKER_0.52", "parameters": {**base, "taker_threshold": 0.52}, "rr": 2.0, "hold_hours": 24.0},
+            {"variant": "TAKER_0.60", "parameters": {**base, "taker_threshold": 0.60}, "rr": 2.0, "hold_hours": 24.0},
             {"variant": "STOP_ATR_1.5", "parameters": {**base, "stop_atr": 1.5}, "rr": 2.0, "hold_hours": 24.0},
             {"variant": "STOP_ATR_2.5", "parameters": {**base, "stop_atr": 2.5}, "rr": 2.0, "hold_hours": 24.0},
             {"variant": "RR_1.5", "parameters": base.copy(), "rr": 1.5, "hold_hours": 24.0},
