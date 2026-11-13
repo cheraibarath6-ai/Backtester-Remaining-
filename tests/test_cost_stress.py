@@ -35,3 +35,10 @@ def test_block_bootstrap_is_reproducible_and_keeps_trade_clusters():
     assert first["trades"] == 80
     assert first["resamples"] == 50
     assert 0 <= first["prob_net_R_positive_pct"] <= 100
+
+
+
+def test_cost_stress_grid_does_not_define_any_ensemble_or_m3_profile():
+    profiles = selected_profiles()
+    assert all(model in {"M6", "M11"} for model in profiles)
+    assert "M3" not in profiles
