@@ -1,28 +1,6 @@
 name: Independent M6-M11 Expanding Walk-Forward
 
 on:
-  push:
-    branches: [research/funding-notional-audit-v2]
-    paths:
-      - ".github/workflows/m6-m11-walkforward.yml"
-      - "crypto_research/walkforward_run.py"
-      - "crypto_research/aggregate_walkforward.py"
-      - "crypto_research/backtest.py"
-      - "crypto_research/metrics.py"
-      - "crypto_research/combination_run.py"
-      - "crypto_research/independent_models.py"
-      - "tests/test_walkforward.py"\n      - "tests/test_combinations.py"
-  pull_request:
-    branches: [main]
-    paths:
-      - ".github/workflows/m6-m11-walkforward.yml"
-      - "crypto_research/walkforward_run.py"
-      - "crypto_research/aggregate_walkforward.py"
-      - "crypto_research/backtest.py"
-      - "crypto_research/metrics.py"
-      - "crypto_research/combination_run.py"
-      - "crypto_research/independent_models.py"
-      - "tests/test_walkforward.py"
   workflow_dispatch:
     inputs:
       start:
