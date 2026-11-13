@@ -264,7 +264,9 @@ def acquire_recent_funding(symbol: str, start, end) -> pd.DataFrame:
             continue
         parts.append(_read_funding_zip(path))
     if missing_days:
-        raise RuntimeError(f"Missing official daily funding archives for {symbol}: {missing_days}")
+        error = RuntimeError(f"Missing official daily funding archives for {symbol}: {missing_days}")
+        error.missing_days = missing_days
+        raise error
     if not parts:
         raise RuntimeError(f"No official daily funding archives for {symbol}")
     data = pd.concat(parts).sort_index()
@@ -382,11 +384,13 @@ def main():
         oi_quality = {"symbol": symbol, "status": "DATA_UNAVAILABLE", "error": str(error)}
 
     funding_error = None
+    funding_missing_days = []
     funding = pd.DataFrame()
     try:
         funding = acquire_recent_funding(symbol, evaluation_start, end_ts)
     except RuntimeError as error:
         funding_error = str(error)
+        funding_missing_days = getattr(error, "missing_days", [])
     funding_gaps = funding.index.to_series().diff().dropna() if not funding.empty else pd.Series(dtype="timedelta64[ns]")
     funding_max_gap = (
         float(funding_gaps.max().total_seconds() / 3600)
@@ -396,7 +400,7 @@ def main():
     rows, yearly, ledgers = [], [], []
     profiles = selected_forward_profiles()
     if funding_error or funding.empty:
-        missing_days = [
+        missing_days = funding_missing_days or [
             day.strftime("%Y-%m-%d")
             for day in pd.date_range(
                 evaluation_start.floor("D"), end_ts.floor("D") - pd.Timedelta(days=1), freq="D"
