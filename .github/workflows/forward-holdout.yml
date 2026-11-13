@@ -1,0 +1,64 @@
+name: Forward Holdout M6 M11
+
+on:
+  push:
+    branches: [research/funding-notional-audit-v2]
+    paths:
+      - ".github/workflows/forward-holdout.yml"
+      - "crypto_research/forward_run.py"
+      - "tests/test_forward.py"
+  workflow_dispatch:
+    inputs:
+      warmup_start:
+        description: UTC warm-up start (must remain within Binance recent OI API history)
+        required: true
+        default: "2026-10-12"
+      evaluation_start:
+        description: Forward scoring start, after the previously screened period
+        required: true
+        default: "2026-11-01"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: forward-holdout-m6-m11-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  forward:
+    name: Forward M6/M11 / ${{ matrix.symbol }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        symbol: [BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT, XRPUSDT, ADAUSDT, DOGEUSDT]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Compile and run regression tests
+        run: python -m compileall -q crypto_research tests && python -m pytest -q
+      - name: Run forward-only M6/M11 candidates
+        run: >
+          python -m crypto_research.forward_run
+          --symbol "${{ matrix.symbol }}"
+          --warmup-start "${{ inputs.warmup_start || '2026-10-12' }}"
+          --evaluation-start "${{ inputs.evaluation_start || '2026-11-01' }}"
+          --fee-bps 5
+          --slippage-bps 2
+          --out forward_holdout_artifacts
+      - name: Upload forward symbol results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: forward-holdout-${{ matrix.symbol }}
+          path: forward_holdout_artifacts/
+          if-no-files-found: warn
+          retention-days: 90
