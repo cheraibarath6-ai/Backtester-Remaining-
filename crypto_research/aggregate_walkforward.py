@@ -29,8 +29,14 @@ def main():
             ["model", "year", "period_label"], dropna=False
         ):
             completed = group.loc[group.status.eq("COMPLETED")].copy()
-            valid_net = pd.to_numeric(completed.get("test_net_R"), errors="coerce")
-            valid_pf = pd.to_numeric(completed.get("test_profit_factor_r"), errors="coerce")
+            valid_net = (
+                pd.to_numeric(completed["test_net_R"], errors="coerce")
+                if "test_net_R" in completed else pd.Series(dtype=float)
+            )
+            valid_pf = (
+                pd.to_numeric(completed["test_profit_factor_r"], errors="coerce")
+                if "test_profit_factor_r" in completed else pd.Series(dtype=float)
+            )
             summaries.append({
                 "model": model,
                 "year": int(year),
@@ -42,8 +48,8 @@ def main():
                 "median_symbol_net_R": round(float(valid_net.median()), 3) if valid_net.notna().any() else None,
                 "median_symbol_R_PF": round(float(valid_pf.median()), 4) if valid_pf.notna().any() else None,
                 "median_symbol_max_drawdown_pct": round(
-                    float(pd.to_numeric(completed.get("test_max_drawdown_pct"), errors="coerce").median()), 3
-                ) if not completed.empty else None,
+                    float(pd.to_numeric(completed["test_max_drawdown_pct"], errors="coerce").median()), 3
+                ) if not completed.empty and "test_max_drawdown_pct" in completed else None,
                 "note": "Symbol-stream diagnostics only; no cross-symbol return or portfolio drawdown is calculated.",
             })
     summary = pd.DataFrame(summaries)
@@ -77,11 +83,11 @@ def main():
         "",
         "## Symbol consistency",
         "",
-        summary.to_markdown(index=False) if not summary.empty else "No completed symbol streams.",
+        summary.to_string(index=False) if not summary.empty else "No completed symbol streams.",
         "",
         "## Status counts",
         "",
-        status.to_markdown(index=False) if not status.empty else "No status rows.",
+        status.to_string(index=False) if not status.empty else "No status rows.",
     ]
     (out / "WALK_FORWARD_REPORT.md").write_text("\n".join(report) + "\n")
     print(f"Aggregated {len(results)} symbol/year rows, {len(candidates)} candidate scores, {len(ledgers)} trades.")
