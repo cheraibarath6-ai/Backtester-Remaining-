@@ -15,7 +15,7 @@ on:
       - "tests/test_cost_stress.py"
       - ".github/workflows/funding-audit-tests.yml"
   pull_request:
-    branches: [research/funding-notional-audit-v2]
+    branches: [main]
     paths:
       - "crypto_research/backtest.py"
       - "crypto_research/metrics.py"
