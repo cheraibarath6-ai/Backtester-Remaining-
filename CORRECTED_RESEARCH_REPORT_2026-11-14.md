@@ -195,3 +195,26 @@ The latest branch comparison against `main` is 101 commits ahead across 33 chang
 - Earlier run 43503121592 failed because the old long-hold test rejected the intentional 24h baseline; run 43503320576 passed the full test step (70 passed) but was cancelled during workflow replacement. The current run IDs above supersede those attempts.
 
 The original 24h M6/M11 profiles are now included in both the combination and cost-stress grids. No cost-stress or walk-forward performance result is claimed until their current artifacts finish and are inspected.
+
+## Latest audit update — 14 November 2026
+
+### Funding settlement boundary treatment
+
+The shared executor now distinguishes settlements strictly inside a position's holding interval from settlements exactly coincident with its entry or exit timestamp. With OHLC data, ordering at an exact boundary cannot be resolved. The conservative rule is therefore:
+- charge an adverse boundary funding cashflow;
+- do not assume a favorable funding credit at an ambiguous entry/exit boundary;
+- apply the signed funding cashflow normally for settlements strictly inside the holding interval.
+
+This applies to all perpetual strategies, not just M5 or M11. Two dedicated regression tests cover the boundary and interior cases.
+
+### 2026 period naming
+
+The independent screen, M6/M11 sensitivity and combination outputs now use `retrospective_2026_*` fields. The plan and aggregate report explicitly describe 2026 through October as retrospective audit evidence because it was included in broad parameter sweeps; it is not a pristine untouched holdout and is excluded from parameter selection. A future forward-only holdout remains reserved for dates after 1 November 2026, subject to complete official funding data.
+
+### Latest regression and reruns
+
+- [Funding/accounting regression run 43525320832](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43525320832): successful; inspected log confirms **77 passed in 1.44s**.
+- Latest corrected branch head: `83474438af4e569db5edd45b49b94d9cd4558362`.
+- [Independent screen 43525314007](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43525314007), [M6/M11 sensitivity 43525314000](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43525314000), [M6/M11 combinations/walk-forward 43525320939](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43525320939), and [full OHLC cost stress 43525320823](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43525320823) are the current corrected run set. Their result artifacts must be inspected after completion; prior runs with the less conservative funding-boundary rule are superseded for final selection.
+
+No model is approved for live trading. M3 remains untouched.
