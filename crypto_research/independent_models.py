@@ -17,12 +17,17 @@ TIMEFRAME_RULES = {
     "1d": "1D",
 }
 INDEPENDENT_MODELS = ("M6", "M7", "M8", "M9", "M10", "M11", "M12", "M13", "M14", "M15")
+_BAR_CACHE: dict[tuple, pd.DataFrame] = {}
 
 
 def prepare_bars(raw: pd.DataFrame, timeframe: str) -> pd.DataFrame:
     """Build completed UTC bars and causal indicators from Binance 1-minute OHLCV."""
     if timeframe not in TIMEFRAME_RULES:
         raise ValueError(f"Unsupported timeframe: {timeframe}")
+    cache_key = (id(raw), timeframe, len(raw), raw.index.min(), raw.index.max())
+    cached = _BAR_CACHE.get(cache_key)
+    if cached is not None:
+        return cached.copy()
     if timeframe == "1m":
         d = raw.copy()
     else:
@@ -89,7 +94,8 @@ def prepare_bars(raw: pd.DataFrame, timeframe: str) -> pd.DataFrame:
     d["macd_signal"] = d.macd.ewm(span=9, adjust=False).mean()
     d["macd_hist"] = d.macd - d.macd_signal
 
-    return d
+    _BAR_CACHE[cache_key] = d
+    return d.copy()
 
 
 def _set_atr_stops(d: pd.DataFrame, long: pd.Series, short: pd.Series, multiple: float):
