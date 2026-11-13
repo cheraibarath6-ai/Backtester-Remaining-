@@ -1,4 +1,4 @@
-name: PFI Progressive Factor Isolation
+name: PFI Progressive Factor Isolation — Stage 2
 on:
   push:
     branches: [main]
@@ -39,7 +39,7 @@ jobs:
         run: pip install -r requirements.txt
       - name: Compile and test
         run: python -m compileall -q crypto_research tests && python -m pytest -q
-      - name: Run PFI one-factor-at-a-time exploration
+      - name: Run next-factor exploration across retained Stage 1 zones
         run: >
           python -m crypto_research.pfi_single
           --start "${{ inputs.start || '2021-01-01' }}"
