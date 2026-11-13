@@ -141,6 +141,9 @@ def make_independent_signals(
         raise ValueError(f"Unsupported independent model: {model}")
     parameters = parameters or {}
     d = prepare_bars(raw, timeframe)
+    # Compatibility for explicit synthetic fixtures and older cached frames.
+    if "data_segment" not in d.columns:
+        d["data_segment"] = 0
     d["signal"] = 0
     d["stop"] = np.nan
     d["target"] = np.nan
@@ -185,6 +188,8 @@ def make_independent_signals(
         if benchmark_raw is None:
             raise ValueError(f"{model} requires BTC benchmark candles")
         benchmark = prepare_bars(benchmark_raw, timeframe)
+        if "data_segment" not in benchmark.columns:
+            benchmark["data_segment"] = 0
         bar_delta = pd.Timedelta(TIMEFRAME_RULES[timeframe])
         btc_close = benchmark.close.reindex(d.index, method="ffill", tolerance=bar_delta)
         btc_segment = benchmark.data_segment.reindex(
