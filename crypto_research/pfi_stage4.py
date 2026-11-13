@@ -22,7 +22,7 @@ PROFILES = {
         "displacement_atr": 1.6,
         "structure_lookback": 5,
         "adx_min": 24,
-        "htf_4h": true,
+        "htf_4h": True,
         "volume_ratio_min": 1.2,
         "stop_lookback": 5,
         "stop_buffer_atr": 0.15
@@ -37,7 +37,7 @@ PROFILES = {
         "displacement_atr": 1.6,
         "structure_lookback": 8,
         "adx_min": 18,
-        "htf_4h": false,
+        "htf_4h": False,
         "volume_ratio_min": 1,
         "stop_lookback": 7,
         "stop_buffer_atr": 0.05
@@ -52,7 +52,7 @@ PROFILES = {
         "displacement_atr": 1.6,
         "structure_lookback": 3,
         "adx_min": 12,
-        "htf_4h": true,
+        "htf_4h": True,
         "volume_ratio_min": 0.8,
         "stop_lookback": 3,
         "stop_buffer_atr": 0.25
@@ -67,7 +67,7 @@ PROFILES = {
         "displacement_atr": 1.1,
         "structure_lookback": 5,
         "adx_min": 18,
-        "htf_4h": false,
+        "htf_4h": False,
         "volume_ratio_min": 1,
         "stop_lookback": 5,
         "stop_buffer_atr": 0.15
@@ -83,7 +83,7 @@ PROFILES = {
         "rsi_trigger": 70,
         "adx_min": 18,
         "di_spread_min": 5,
-        "htf_4h": true,
+        "htf_4h": True,
         "volume_ratio_min": 1,
         "stop_lookback": 15,
         "stop_buffer_atr": 0.15
@@ -97,7 +97,7 @@ PROFILES = {
         "rsi_trigger": 68,
         "adx_min": 24,
         "di_spread_min": 0,
-        "htf_4h": false,
+        "htf_4h": False,
         "volume_ratio_min": 0.8,
         "stop_lookback": 10,
         "stop_buffer_atr": 0.05
@@ -111,7 +111,7 @@ PROFILES = {
         "rsi_trigger": 55,
         "adx_min": 12,
         "di_spread_min": 2,
-        "htf_4h": true,
+        "htf_4h": True,
         "volume_ratio_min": 1.2,
         "stop_lookback": 5,
         "stop_buffer_atr": 0.25
@@ -125,7 +125,7 @@ PROFILES = {
         "rsi_trigger": 55,
         "adx_min": 18,
         "di_spread_min": 2,
-        "htf_4h": false,
+        "htf_4h": False,
         "volume_ratio_min": 1,
         "stop_lookback": 10,
         "stop_buffer_atr": 0.15
@@ -141,7 +141,7 @@ PROFILES = {
         "max_retest_age": 1,
         "breakout_buffer_atr": 0.2,
         "adx_min": 24,
-        "htf_4h": true,
+        "htf_4h": True,
         "volume_ratio_min": 1.2,
         "stop_lookback": 5,
         "stop_buffer_atr": 0.25
@@ -155,7 +155,7 @@ PROFILES = {
         "max_retest_age": 3,
         "breakout_buffer_atr": 0.1,
         "adx_min": 18,
-        "htf_4h": false,
+        "htf_4h": False,
         "volume_ratio_min": 0.8,
         "stop_lookback": 8,
         "stop_buffer_atr": 0.05
@@ -169,7 +169,7 @@ PROFILES = {
         "max_retest_age": 4,
         "breakout_buffer_atr": 0,
         "adx_min": 12,
-        "htf_4h": true,
+        "htf_4h": True,
         "volume_ratio_min": 1,
         "stop_lookback": 3,
         "stop_buffer_atr": 0.15
@@ -183,7 +183,7 @@ PROFILES = {
         "max_retest_age": 6,
         "breakout_buffer_atr": 0.1,
         "adx_min": 18,
-        "htf_4h": false,
+        "htf_4h": False,
         "volume_ratio_min": 1,
         "stop_lookback": 5,
         "stop_buffer_atr": 0.15
@@ -198,7 +198,7 @@ PROFILES = {
         "funding_percentile": 0.05,
         "taker_imbalance": 0.51,
         "adx_min": 18,
-        "htf_4h": true,
+        "htf_4h": True,
         "volume_ratio_min": 1.2,
         "max_ema_distance_atr": 0.5,
         "stop_lookback": 12,
@@ -212,7 +212,7 @@ PROFILES = {
         "funding_percentile": 0.05,
         "taker_imbalance": 0.53,
         "adx_min": 0,
-        "htf_4h": false,
+        "htf_4h": False,
         "volume_ratio_min": 0.8,
         "max_ema_distance_atr": 1,
         "stop_lookback": 8,
@@ -226,7 +226,7 @@ PROFILES = {
         "funding_percentile": 0.05,
         "taker_imbalance": 0.57,
         "adx_min": 12,
-        "htf_4h": true,
+        "htf_4h": True,
         "volume_ratio_min": 1,
         "max_ema_distance_atr": 2,
         "stop_lookback": 5,
@@ -240,7 +240,7 @@ PROFILES = {
         "funding_percentile": 0.2,
         "taker_imbalance": 0.55,
         "adx_min": 12,
-        "htf_4h": false,
+        "htf_4h": False,
         "volume_ratio_min": 1,
         "max_ema_distance_atr": 1,
         "stop_lookback": 8,
