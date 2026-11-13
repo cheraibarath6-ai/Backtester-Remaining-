@@ -1,3 +1,4 @@
+# Backtest audit refresh: causal M13 lag and complete-bar resampling (2026-11-13)
 from __future__ import annotations
 
 import numpy as np
