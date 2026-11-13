@@ -361,7 +361,6 @@ def main():
     end_text = _naive_utc_text(end_ts)
     if evaluation_start >= end_ts:
         raise RuntimeError("No completed daily archive data exists after the forward evaluation start")
-    funding = acquire_recent_funding(symbol, evaluation_start, end_ts)
     candle_quality = quality_report(raw, symbol, start_text, end_text)
     candle_quality["missing_archive_days"] = raw.attrs.get("missing_archive_days", [])
     candle_quality["source"] = raw.attrs.get("source", "unknown")
@@ -376,11 +375,19 @@ def main():
             oi, symbol, _naive_utc_text(oi_start), _naive_utc_text(oi_end)
         )
         oi_quality["source"] = oi.attrs.get("source", "unknown")
+        oi_quality["timestamp_alignment"] = oi.attrs.get("timestamp_alignment", "unknown")
+        oi_quality["missing_archive_days"] = oi.attrs.get("missing_archive_days", [])
         oi.to_csv(out / f"{symbol}_forward_open_interest.csv")
     except Exception as error:
         oi_quality = {"symbol": symbol, "status": "DATA_UNAVAILABLE", "error": str(error)}
 
-    funding_gaps = funding.index.to_series().diff().dropna()
+    funding_error = None
+    funding = pd.DataFrame()
+    try:
+        funding = acquire_recent_funding(symbol, evaluation_start, end_ts)
+    except RuntimeError as error:
+        funding_error = str(error)
+    funding_gaps = funding.index.to_series().diff().dropna() if not funding.empty else pd.Series(dtype="timedelta64[ns]")
     funding_max_gap = (
         float(funding_gaps.max().total_seconds() / 3600)
         if not funding_gaps.empty else None
@@ -388,6 +395,49 @@ def main():
 
     rows, yearly, ledgers = [], [], []
     profiles = selected_forward_profiles()
+    if funding_error or funding.empty:
+        missing_days = [
+            day.strftime("%Y-%m-%d")
+            for day in pd.date_range(
+                evaluation_start.floor("D"), end_ts.floor("D") - pd.Timedelta(days=1), freq="D"
+            )
+        ]
+        for model, model_profiles in profiles.items():
+            for profile in model_profiles:
+                rows.append({
+                    "model": model, "variant": profile["variant"], "symbol": symbol,
+                    "timeframe": "4h", "status": "DATA_GATED_FUNDING_ARCHIVE_PENDING",
+                    "skip_reason": funding_error or "Official funding archive is empty",
+                    "trades": 0, "evaluation_start": str(evaluation_start),
+                    "end_exclusive": end_text,
+                })
+        pd.DataFrame(rows).to_csv(out / "screen_results.csv", index=False)
+        pd.DataFrame().to_csv(out / "screen_yearly.csv", index=False)
+        pd.DataFrame().to_csv(out / "trade_ledger.csv", index=False)
+        raw.to_csv(out / f"{symbol}_forward_1m_candles.csv.gz", compression="gzip")
+        metadata = {
+            "symbol": symbol, "warmup_start": start_text,
+            "evaluation_start": str(evaluation_start), "end_exclusive": end_text,
+            "status": "DATA_GATED_FUNDING_ARCHIVE_PENDING",
+            "models": ["M6", "M11"],
+            "variants": {key: [p["variant"] for p in value] for key, value in profiles.items()},
+            "timeframe": "4h", "candle_quality": candle_quality,
+            "candle_source": raw.attrs.get("source", "unknown"),
+            "funding_source": "unavailable_official_daily_funding_archive_not_published",
+            "funding_rows": int(len(funding)),
+            "funding_missing_archive_days": missing_days,
+            "open_interest_quality": oi_quality,
+            "note": (
+                "Forward prices and OI were collected, but the official Binance USD-M "
+                "funding archive for November 2026 is not yet published and the public "
+                "funding REST endpoint is region-restricted. Perpetual strategies are "
+                "not scored without funding costs. Re-run after the November monthly "
+                "funding archive is published. M6 and M11 remain independent; M11 is OI-only."
+            ),
+        }
+        (out / "run_summary.json").write_text(json.dumps(metadata, indent=2, default=str))
+        print(f"FORWARD HOLDOUT DATA-GATED {symbol}: official funding archive pending", flush=True)
+        return
     expected_last_bar = end_ts.floor("4h")
     for model in ("M6", "M11"):
         if model == "M11" and (oi is None or oi.empty):
