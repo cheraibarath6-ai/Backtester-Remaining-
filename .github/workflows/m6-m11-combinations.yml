@@ -7,6 +7,7 @@ on:
       - ".github/workflows/m6-m11-combinations.yml"
       - "crypto_research/combination_run.py"
       - "crypto_research/backtest.py"
+      - "crypto_research/metrics.py"
       - "crypto_research/independent_models.py"
       - "crypto_research/aggregate_independent.py"
       - "tests/test_combinations.py"
