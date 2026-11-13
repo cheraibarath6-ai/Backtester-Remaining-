@@ -17,11 +17,11 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: pfi-stage1-${{ github.ref }}
+  group: pfi-stage2-${{ github.ref }}
   cancel-in-progress: false
 jobs:
   pfi:
-    name: PFI Stage 1 / ${{ matrix.model }}
+    name: PFI Stage 2 / ${{ matrix.model }}
     runs-on: ubuntu-latest
     timeout-minutes: 360
     strategy:
@@ -39,21 +39,21 @@ jobs:
         run: pip install -r requirements.txt
       - name: Compile and test
         run: python -m compileall -q crypto_research tests && python -m pytest -q
-      - name: Run PFI factor isolation
+      - name: Run PFI one-factor-at-a-time exploration
         run: >
-          python -m crypto_research.pfi
+          python -m crypto_research.pfi_single
           --start "${{ inputs.start || '2021-01-01' }}"
           --end "${{ inputs.end || '2026-11-13' }}"
           --symbols BTCUSDT ETHUSDT
           --timeframes 5m 15m
           --models "${{ matrix.model }}"
           --fee-bps 5 --slippage-bps 2 --rr 2
-          --out pfi_artifacts
-      - name: Upload PFI results
+          --out pfi_stage2_artifacts
+      - name: Upload PFI Stage 2 results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pfi-stage1-${{ matrix.model }}
-          path: pfi_artifacts/
+          name: pfi-stage2-${{ matrix.model }}
+          path: pfi_stage2_artifacts/
           if-no-files-found: warn
           retention-days: 90
