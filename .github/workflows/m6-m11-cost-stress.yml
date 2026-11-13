@@ -12,6 +12,17 @@ on:
       - "crypto_research/metrics.py"
       - "crypto_research/combination_run.py"
       - "crypto_research/independent_models.py"
+  pull_request:
+    branches: [research/funding-notional-audit-v2]
+    paths:
+      - ".github/workflows/m6-m11-cost-stress.yml"
+      - "crypto_research/cost_stress_run.py"
+      - "crypto_research/aggregate_cost_stress.py"
+      - "tests/test_cost_stress.py"
+      - "crypto_research/backtest.py"
+      - "crypto_research/metrics.py"
+      - "crypto_research/combination_run.py"
+      - "crypto_research/independent_models.py"
   workflow_dispatch:
     inputs:
       start:
@@ -27,7 +38,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: independent-m6-m11-cost-stress-${{ github.ref }}
+  group: independent-m6-m11-cost-stress-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
