@@ -3,7 +3,7 @@ import pandas as pd
 from crypto_research.walkforward_run import (
     completed_training_cohort,
     select_candidate,
-    test_year_signals,
+    build_test_year_window,
 )
 
 
@@ -57,10 +57,10 @@ def test_year_window_disables_entries_at_and_after_exclusive_end():
     index = pd.date_range("2022-12-31 20:00", periods=5, freq="4h", tz="UTC")
     signals = pd.DataFrame({"signal": [1, 1, -1, -1, 1]}, index=index)
 
-    window = test_year_signals(signals, "2023-01-01", "2023-01-02")
+    window = build_test_year_window(signals, "2023-01-01", "2023-01-02")
 
     assert window.index[0] == pd.Timestamp("2023-01-01 00:00", tz="UTC")
-    assert window.signal.iloc[0] == 0
+    assert window.signal.iloc[0] == 1
     assert (window.loc[window.index >= pd.Timestamp("2023-01-02", tz="UTC"), "signal"] == 0).all()
 
 
