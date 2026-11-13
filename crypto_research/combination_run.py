@@ -17,6 +17,7 @@ def combination_profiles(model: str) -> list[dict]:
     if model == "M6":
         base = {"donchian_period": 55, "volume_ratio_min": 1.0, "stop_atr": 2.5}
         return [
+            {"variant": "BASELINE_H24", "parameters": base.copy(), "rr": 2.0, "hold_hours": 24.0},
             {"variant": "ANCHOR_H168", "parameters": base.copy(), "rr": 2.0, "hold_hours": 168.0},
             {"variant": "D100_H168", "parameters": {**base, "donchian_period": 100}, "rr": 2.0, "hold_hours": 168.0},
             {"variant": "STOP2_H168", "parameters": {**base, "stop_atr": 2.0}, "rr": 2.0, "hold_hours": 168.0},
@@ -42,6 +43,7 @@ def combination_profiles(model: str) -> list[dict]:
             "stop_atr": 2.0,
         }
         return [
+            {"variant": "BASELINE_H24", "parameters": base.copy(), "rr": 2.0, "hold_hours": 24.0},
             {"variant": "ANCHOR_H48", "parameters": base.copy(), "rr": 2.0, "hold_hours": 48.0},
             {"variant": "OI05_PRICE025_H48", "parameters": {**base, "oi_change_min": 0.005, "price_change_min": 0.0025}, "rr": 2.0, "hold_hours": 48.0},
             {"variant": "OI05_PRICE025_RR3_H48", "parameters": {**base, "oi_change_min": 0.005, "price_change_min": 0.0025}, "rr": 3.0, "hold_hours": 48.0},
