@@ -5,6 +5,8 @@ on:
     branches: [research/funding-notional-audit]
     paths:
       - "crypto_research/backtest.py"
+      - "crypto_research/independent_models.py"
+      - "crypto_research/sensitivity_run.py"
       - "tests/test_backtest.py"
       - "tests/test_sensitivity.py"
       - ".github/workflows/funding-audit-tests.yml"
