@@ -74,3 +74,18 @@ Its research pipeline is a useful validation reference: time-ordered walk-forwar
 - [MoonDev Binance liquidation archive](https://moondev.com/docs) documents 35M+ events from 2024-06-04 to 2026-04-23, plus a live segment from 2026-07-18 onward. It has a permanent 2026-04-23 to 2026-07-18 gap, and bulk historical access requires a Quant Elite API key. It cannot supply a continuous free 2021-2026 series.
 - [CoinGlass Pair Liquidation History](https://docs.coinglass.com/reference/liquidation-history) exposes long/short USD liquidation aggregates through an API; the Hobbyist plan is limited to intervals of 4h or longer, and access requires an API key. Historical start/coverage must be verified from actual responses before use.
 - Decision: do not fabricate liquidation events from price/OI or treat sampled forceOrder messages as a complete tape. M11 remains explicitly OI-pressure-only until a licensed, coverage-audited liquidation source is available. A later 4h liquidation-aggregate variant can be tested separately if a permitted API source is obtained.
+
+
+
+
+
+### Additional strategy and engine references verified in this audit branch
+
+| Candidate / role | Repository and inspected source | Licence status | Decision |
+|---|---|---|---|
+| M6 Donchian | [zekiayberk/Donchian-ML-Strategy](https://github.com/zekiayberk/Donchian-ML-Strategy), especially `indicators/donchian.py`, `docs/strategy.md`, and `run_wfo.py` | MIT; LICENSE file verified | Adds a concrete Donchian + ATR trailing-stop + walk-forward reference. Its README describes optional ML filtering; that filter will remain off in the standalone comparison unless tested as a separate model. |
+| M7 mean reversion | [PatrickSebastine/mean-reversion-trading-bot](https://github.com/PatrickSebastine/mean-reversion-trading-bot), `strategies.py` and README | MIT; LICENSE file verified | Concrete Bollinger/RSI mean-reversion reference with long/short simulation and fees/slippage claims. No robust independent performance evidence was imported. |
+| Backtest accounting reference | [zionhann/open-binancian-futures](https://github.com/zionhann/open-binancian-futures), `open_binancian_futures/backtesting.py` | MIT; LICENSE file verified | Inspected as a Binance USD-M framework with explicit cost-model abstraction and deterministic OHLC execution. Used as a design reference only; no code copied. |
+| M13 BTC-to-altcoin lead-lag | [mamipour/lead-lag-trader](https://github.com/mamipour/lead-lag-trader) | Public repository; no LICENSE file found in the checked root path | README describes BTC impulse / altcoin delayed-response logic, regime filters and short holding windows. Treat as idea-only; do not copy code or assume reuse rights without an explicit licence. Its claimed trading behavior is not independently validated here. |
+
+The above repositories are implementation references, not proof of a profitable edge. Their README claims and configuration examples are not substituted for the Binance USD-M backtests in this repository.
