@@ -53,17 +53,17 @@ def build_test_year_window(
     signals: pd.DataFrame, start: str | pd.Timestamp, end_exclusive: str | pd.Timestamp
 ) -> pd.DataFrame:
     """
-    Create a flat-start test window. The completed bar labelled at the year
-    boundary may signal an entry at that boundary's next-bar open. Signals at
-    or after the exclusive end are disabled; existing test positions can exit
-    during the allowed holding extension.
+    Create a flat-start test window using right-labelled completed bars.
+    A first bar whose close label is after the boundary is fully inside the
+    test period; its signal is available at that close and may enter at the
+    next bar open. A bar labelled exactly at the boundary may enter at the
+    boundary open. Signals at/after the exclusive end are disabled, while
+    positions opened within the year may use their predeclared exit horizon.
     """
     start_ts, end_ts = _utc(start), _utc(end_exclusive)
     out = signals.loc[signals.index >= start_ts].copy()
     if out.empty:
         return out
-    if out.index[0] != start_ts:
-        out.iloc[0, out.columns.get_loc("signal")] = 0
     out.loc[out.index >= end_ts, "signal"] = 0
     return out
 
