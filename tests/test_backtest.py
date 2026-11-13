@@ -72,3 +72,29 @@ def test_summary_reports_holding_time():
 def test_binance_archive_timestamp_unit_detection_handles_ms_and_us():
     assert _timestamp_unit(pd.Series([1_700_000_000_000])) == "ms"
     assert _timestamp_unit(pd.Series([1_700_000_000_000_000])) == "us"
+
+
+def test_pfi_fast_backtest_checks_entry_bar_and_records_holding_time():
+    from crypto_research.pfi import fast_backtest
+
+    trades = fast_backtest(
+        _bars(entry_high=111.0), None, "BTCUSDT", "M1", "5m",
+        fee_bps=0, slippage_bps=0, rr=2,
+    )
+    assert len(trades) == 1
+    assert trades.iloc[0].exit_reason == "TARGET"
+    assert trades.iloc[0].holding_minutes == 5
+
+
+def test_summary_supports_legacy_trade_ledger_without_holding_minutes():
+    legacy = pd.DataFrame({
+        "exit_time": ["2024-01-01 00:10:00+00:00"],
+        "entry_time": ["2024-01-01 00:05:00+00:00"],
+        "net_bps": [10.0],
+        "net_return_pct": [0.1],
+        "net_R": [0.2],
+        "funding_cost_pct": [0.0],
+    })
+    stats = summarize(legacy)
+    assert stats["avg_holding_minutes"] == 5.0
+    assert stats["median_holding_minutes"] == 5.0
