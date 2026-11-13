@@ -50,6 +50,51 @@ def test_prepare_bars_uses_completed_right_labelled_bars():
     assert len(bars) == 6
 
 
+
+def test_prepare_bars_drops_incomplete_resampled_candles():
+    raw = _synthetic_raw(10).drop(pd.Timestamp("2024-01-01 00:02:00", tz="UTC"))
+    bars = prepare_bars(raw, "5m")
+    assert len(bars) == 1
+    assert bars.index[0] == pd.Timestamp("2024-01-01 00:10:00", tz="UTC")
+
+
+def test_m13_uses_a_prior_non_overlapping_btc_impulse(monkeypatch):
+    import crypto_research.independent_models as models
+
+    index = pd.date_range("2024-01-01", periods=25, freq="4h", tz="UTC")
+    alt = pd.DataFrame(index=index)
+    alt["close"] = 100.0
+    alt.loc[index[13], "close"] = 100.05
+    alt.loc[index[14], "close"] = 100.10
+    alt.loc[index[15], "close"] = 100.20
+    alt["high"] = alt.close + 0.1
+    alt["low"] = alt.close - 0.1
+    alt["atr"] = 1.0
+    alt["ema20"] = 100.1
+    alt["signal"] = 0
+    alt["stop"] = np.nan
+    alt["target"] = np.nan
+
+    btc = alt.copy()
+    btc["close"] = 100.0
+    btc.loc[index[10], "close"] = 100.2
+    btc.loc[index[11], "close"] = 100.45
+    btc.loc[index[12], "close"] = 100.70
+    btc.loc[index[13]:index[15], "close"] = 100.70
+
+    def fake_prepare(raw, timeframe):
+        return (alt if raw is alt_raw else btc).copy()
+
+    alt_raw = object()
+    btc_raw = object()
+    monkeypatch.setattr(models, "prepare_bars", fake_prepare)
+    signals = models.make_independent_signals(
+        alt_raw, "M13", "4h", benchmark_raw=btc_raw
+    )
+    assert signals.loc[index[15], "signal"] == 1
+    assert signals.loc[index[12], "signal"] == 0
+
+
 @pytest.mark.parametrize("model", ["M6", "M7", "M8", "M9", "M12", "M14", "M15"])
 def test_price_only_independent_models_build_valid_signals(model):
     raw = _synthetic_raw()

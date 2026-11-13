@@ -98,3 +98,45 @@ def test_summary_supports_legacy_trade_ledger_without_holding_minutes():
     stats = summarize(legacy)
     assert stats["avg_holding_minutes"] == 5.0
     assert stats["median_holding_minutes"] == 5.0
+
+
+def test_stop_gap_fills_at_the_open_not_the_stale_stop_price():
+    index = pd.date_range("2024-01-01 00:05:00", periods=3, freq="5min", tz="UTC")
+    bars = pd.DataFrame(
+        {
+            "open": [100.0, 100.0, 90.0],
+            "high": [101.0, 101.0, 92.0],
+            "low": [99.0, 96.0, 89.0],
+            "close": [100.0, 100.0, 91.0],
+            "signal": [1, 0, 0],
+            "stop": [95.0, float("nan"), float("nan")],
+            "target": [float("nan"), float("nan"), float("nan")],
+        },
+        index=index,
+    )
+    trades = run_backtest(
+        bars, None, "BTCUSDT", "M6", "5m",
+        fee_bps=0, slippage_bps=0, rr=2,
+    )
+    assert len(trades) == 1
+    assert trades.iloc[0].exit_reason == "STOP_GAP"
+    assert trades.iloc[0].exit == 90.0
+    assert abs(trades.iloc[0].net_R + 2.0) < 1e-9
+
+
+def test_summary_uses_fixed_risk_not_full_notional_compounding():
+    trades = pd.DataFrame({
+        "exit_time": ["2024-01-01 00:10:00+00:00", "2024-01-01 00:15:00+00:00"],
+        "entry_time": ["2024-01-01 00:05:00+00:00", "2024-01-01 00:10:00+00:00"],
+        "net_bps": [200.0, -300.0],
+        "net_return_pct": [2.0, -3.0],
+        "net_R": [2.0, -3.0],
+        "funding_cost_pct": [0.0, 0.0],
+        "holding_minutes": [5, 5],
+    })
+    stats = summarize(trades, risk_per_trade_pct=1.0)
+    assert stats["net_return_pct"] == -1.0
+    assert stats["notional_net_return_pct"] == -1.0
+    assert abs(stats["max_drawdown_pct"] - (-2.941)) < 0.01
+    assert stats["max_drawdown_R"] == -3.0
+    assert stats["risk_per_trade_pct"] == 1.0

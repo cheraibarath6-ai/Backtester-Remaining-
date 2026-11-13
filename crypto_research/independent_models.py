@@ -31,7 +31,9 @@ def prepare_bars(raw: pd.DataFrame, timeframe: str) -> pd.DataFrame:
     if timeframe == "1m":
         d = raw.copy()
     else:
-        d = raw.resample(TIMEFRAME_RULES[timeframe], label="right", closed="left").agg({
+        resampler = raw.resample(TIMEFRAME_RULES[timeframe], label="right", closed="left")
+        minute_count = resampler["close"].count()
+        d = resampler.agg({
             "open": "first",
             "high": "max",
             "low": "min",
@@ -42,6 +44,13 @@ def prepare_bars(raw: pd.DataFrame, timeframe: str) -> pd.DataFrame:
             "taker_buy_base": "sum",
             "taker_buy_quote": "sum",
         }).dropna(subset=["open", "high", "low", "close"])
+        expected_minutes = {
+            "3m": 3, "5m": 5, "15m": 15, "30m": 30,
+            "1h": 60, "2h": 120, "4h": 240, "6h": 360,
+            "12h": 720, "1d": 1440,
+        }[timeframe]
+        # Do not turn a partial/missing-minute aggregate into a valid candle.
+        d = d.loc[minute_count.reindex(d.index).fillna(0).eq(expected_minutes)]
 
     d = d.sort_index().copy()
     close, high, low = d.close, d.high, d.low
@@ -175,7 +184,9 @@ def make_independent_signals(
             _set_atr_stops(d, long, short, 2.0)
         else:
             lookback = 3
-            btc_impulse = btc_close.pct_change(lookback)
+            # BTC impulse must precede the altcoin response window. Shift
+            # by one full lookback so the two return windows do not overlap.
+            btc_impulse = btc_close.pct_change(lookback).shift(lookback)
             asset_move = d.close.pct_change(lookback)
             long = (btc_impulse >= 0.006) & ((btc_impulse - asset_move) >= 0.003) & (d.close > d.ema20)
             short = (btc_impulse <= -0.006) & ((asset_move - btc_impulse) >= 0.003) & (d.close < d.ema20)
