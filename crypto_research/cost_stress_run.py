@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from .backtest import run_backtest, summarize
+from .backtest import completed_period_cohort, run_backtest, summarize
 from .combination_run import combination_profiles
 from .data import acquire_funding, acquire_klines, quality_report
 from .independent_models import make_independent_signals
@@ -38,11 +38,10 @@ def selected_profiles() -> dict[str, list[dict]]:
     return chosen
 
 
-def _period_summary(trades: pd.DataFrame, first_year: int, last_year: int) -> dict:
-    if trades.empty:
-        return summarize(trades)
-    years = pd.to_datetime(trades.exit_time, utc=True).dt.year
-    return summarize(trades.loc[(years >= first_year) & (years <= last_year)])
+def _period_summary(trades: pd.DataFrame, start_year: int, end_year: int) -> dict:
+    start = pd.Timestamp(year=start_year, month=1, day=1, tz="UTC")
+    end_exclusive = pd.Timestamp(year=end_year + 1, month=1, day=1, tz="UTC")
+    return summarize(completed_period_cohort(trades, start, end_exclusive))
 
 
 def _yearly_rows(trades: pd.DataFrame, base: dict) -> list[dict]:
@@ -61,7 +60,7 @@ def block_bootstrap_metrics(
     if trades.empty or "net_R" not in trades:
         return {"resamples": 0, "block_size": block_size, "prob_net_R_positive_pct": None}
     ordered = trades.sort_values("exit_time")
-    ordered = ordered.loc[~ordered.exit_reason.eq("DATA_GAP")] if "exit_reason" in ordered else ordered
+    ordered = ordered.loc[~ordered.exit_reason.isin(["DATA_GAP", "END_OF_SAMPLE"])] if "exit_reason" in ordered else ordered
     values = pd.to_numeric(ordered.net_R, errors="coerce").dropna().to_numpy(dtype=float)
     n = len(values)
     if n < block_size * 2:

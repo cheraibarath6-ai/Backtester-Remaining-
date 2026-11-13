@@ -240,6 +240,30 @@ def run_backtest(
     return pd.DataFrame(trades)
 
 
+def _utc_timestamp(value):
+    ts = pd.Timestamp(value)
+    return ts.tz_localize("UTC") if ts.tzinfo is None else ts.tz_convert("UTC")
+
+
+def completed_period_cohort(
+    trades: pd.DataFrame, start: str | pd.Timestamp, end_exclusive: str | pd.Timestamp
+) -> pd.DataFrame:
+    """Return completed trades entered within [start, end); exclude gap/censored rows."""
+    if trades.empty:
+        return trades.copy()
+    if not {"entry_time", "exit_time"}.issubset(trades.columns):
+        raise ValueError("Period cohorts require entry_time and exit_time columns")
+    start_ts, end_ts = _utc_timestamp(start), _utc_timestamp(end_exclusive)
+    if end_ts <= start_ts:
+        raise ValueError("end_exclusive must be later than start")
+    entry = pd.to_datetime(trades["entry_time"], utc=True, errors="coerce")
+    exit_time = pd.to_datetime(trades["exit_time"], utc=True, errors="coerce")
+    mask = entry.notna() & exit_time.notna() & entry.ge(start_ts) & entry.lt(end_ts) & exit_time.lt(end_ts)
+    if "exit_reason" in trades.columns:
+        mask &= ~trades["exit_reason"].isin(["DATA_GAP", "END_OF_SAMPLE"])
+    return trades.loc[mask].copy()
+
+
 def summarize(t, risk_per_trade_pct=1.0):
     """
     Summarize one independent symbol/model/timeframe stream.
@@ -257,13 +281,18 @@ def summarize(t, risk_per_trade_pct=1.0):
         int(t.exit_reason.eq("DATA_GAP").sum())
         if "exit_reason" in t.columns else 0
     )
+    end_of_sample_trades = (
+        int(t.exit_reason.eq("END_OF_SAMPLE").sum())
+        if "exit_reason" in t.columns else 0
+    )
     if "exit_reason" in t.columns:
-        t = t.loc[~t.exit_reason.eq("DATA_GAP")].copy()
+        t = t.loc[~t.exit_reason.isin(["DATA_GAP", "END_OF_SAMPLE"])].copy()
 
     if t.empty:
         return {
             "trades": 0, "total_trade_records": total_trade_records,
             "data_gap_trades": data_gap_trades,
+            "end_of_sample_trades": end_of_sample_trades,
             "wins": 0, "losses": 0, "win_rate_pct": 0.0,
             "profit_factor": 0.0, "profit_factor_r": 0.0,
             "net_return_pct": 0.0, "notional_net_return_pct": 0.0,
@@ -313,6 +342,7 @@ def summarize(t, risk_per_trade_pct=1.0):
         "trades": int(len(t)),
         "total_trade_records": total_trade_records,
         "data_gap_trades": data_gap_trades,
+        "end_of_sample_trades": end_of_sample_trades,
         "wins": int(len(w)),
         "losses": int(len(l)),
         "win_rate_pct": round(100 * len(w) / len(t), 2),

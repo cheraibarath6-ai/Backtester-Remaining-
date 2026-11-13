@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from .backtest import run_backtest, summarize
+from .backtest import completed_period_cohort, run_backtest, summarize
 from .data import acquire_funding, acquire_klines, quality_report
 from .independent_models import make_independent_signals
 from .metrics import acquire_open_interest, metrics_quality_report
@@ -67,10 +67,9 @@ def sensitivity_profiles(model: str) -> list[dict]:
 
 
 def period_summary(trades: pd.DataFrame, start_year: int, end_year: int) -> dict:
-    if trades.empty:
-        return summarize(trades)
-    years = pd.to_datetime(trades.exit_time, utc=True).dt.year
-    return summarize(trades[(years >= start_year) & (years <= end_year)])
+    start = pd.Timestamp(year=start_year, month=1, day=1, tz="UTC")
+    end_exclusive = pd.Timestamp(year=end_year + 1, month=1, day=1, tz="UTC")
+    return summarize(completed_period_cohort(trades, start, end_exclusive))
 
 
 def yearly_rows(trades: pd.DataFrame, base: dict) -> list[dict]:

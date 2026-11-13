@@ -23,8 +23,10 @@ def _summary(frame: pd.DataFrame, keys: list[str]) -> pd.DataFrame:
     rows = []
     for key, all_rows in frame.groupby(keys, dropna=False):
         gaps = all_rows.exit_reason.eq("DATA_GAP") if "exit_reason" in all_rows else pd.Series(False, index=all_rows.index)
+        censored = all_rows.exit_reason.eq("END_OF_SAMPLE") if "exit_reason" in all_rows else pd.Series(False, index=all_rows.index)
         data_gap = int(gaps.sum())
-        valid = all_rows.loc[~gaps].copy()
+        end_of_sample = int(censored.sum())
+        valid = all_rows.loc[~(gaps | censored)].copy()
         net = pd.to_numeric(valid.net_bps, errors="coerce").fillna(0.0)
         net_r = pd.to_numeric(valid.net_R, errors="coerce").fillna(0.0)
         positive, negative = net[net > 0].sum(), abs(net[net <= 0].sum())
@@ -38,6 +40,7 @@ def _summary(frame: pd.DataFrame, keys: list[str]) -> pd.DataFrame:
             "trades": int(len(valid)),
             "total_trade_records": int(len(all_rows)),
             "data_gap_trades": data_gap,
+            "end_of_sample_trades": end_of_sample,
             "win_rate_pct": round(100 * wins / len(valid), 2) if len(valid) else 0.0,
             "net_bps_pf": round(float(positive / negative), 4) if negative else None,
             "r_based_pf": round(float(positive_r / negative_r), 4) if negative_r else None,
@@ -46,7 +49,7 @@ def _summary(frame: pd.DataFrame, keys: list[str]) -> pd.DataFrame:
             "fixed_initial_equity_risk_return_pct_at_1pct": round(float(net_r.sum()), 3),
             "worst_symbol_max_drawdown_pct_at_1pct_risk": round(min(dd), 3) if dd else None,
             "avg_holding_minutes": round(float(holding.mean()), 2) if holding.notna().any() else None,
-            "note": "Cross-symbol sums are not portfolio returns; DATA_GAP exits remain in audit ledgers but are excluded from metrics",
+            "note": "Cross-symbol sums are not portfolio returns; DATA_GAP and END_OF_SAMPLE records remain in audit ledgers but are excluded from metrics",
         })
         rows.append(row)
     return pd.DataFrame(rows)
@@ -88,6 +91,7 @@ def main():
         f"- Symbol result rows: {len(results)}",
         f"- Trade ledger rows: {len(ledgers)}",
         f"- DATA_GAP exits in ledger: {int(ledgers.exit_reason.eq('DATA_GAP').sum()) if not ledgers.empty and 'exit_reason' in ledgers else 0}",
+        f"- END_OF_SAMPLE records in ledger: {int(ledgers.exit_reason.eq('END_OF_SAMPLE').sum()) if not ledgers.empty and 'exit_reason' in ledgers else 0}",
         f"- Monte Carlo symbol-stream rows: {len(monte_carlo)}",
         "",
         "Each cost scenario re-executes the OHLC path with altered fees and slippage; this is not simple ledger repricing.",
