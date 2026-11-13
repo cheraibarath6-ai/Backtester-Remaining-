@@ -20,16 +20,43 @@ def _read_all(root: Path, filename: str) -> pd.DataFrame:
     return pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
 
 
+def _risk_curve_metrics(frame: pd.DataFrame) -> dict:
+    ordered = frame.sort_values("exit_time")
+    net_r = pd.to_numeric(ordered.net_R, errors="coerce").fillna(0.0)
+    cumulative = net_r.cumsum()
+    peak = cumulative.cummax().clip(lower=0.0)
+    drawdown_r = cumulative - peak
+    risk_equity = 1.0 + cumulative * 0.01
+    risk_peak = risk_equity.cummax().clip(lower=1.0)
+    drawdown_pct = (risk_equity / risk_peak - 1.0).clip(lower=-1.0) * 100.0
+    return {
+        "max_drawdown_R": round(float(drawdown_r.min()), 3) if len(drawdown_r) else 0.0,
+        "max_drawdown_pct_at_1pct_risk": round(float(drawdown_pct.min()), 3) if len(drawdown_pct) else 0.0,
+        "risk_equity_ruined_at_1pct_risk": bool((risk_equity <= 0).any()),
+    }
+
+
 def _aggregate_trade_rows(trades: pd.DataFrame) -> pd.DataFrame:
     if trades.empty:
         return pd.DataFrame()
     rows = []
     keys = ["model", "variant", "timeframe"]
     for key, frame in trades.groupby(keys, dropna=False):
-        net = pd.to_numeric(frame.net_bps, errors="coerce").fillna(0)
+        net = pd.to_numeric(frame.net_bps, errors="coerce").fillna(0.0)
+        net_r = pd.to_numeric(frame.net_R, errors="coerce").fillna(0.0)
         gross_profit = float(net[net > 0].sum())
         gross_loss = abs(float(net[net <= 0].sum()))
+        gross_profit_r = float(net_r[net_r > 0].sum())
+        gross_loss_r = abs(float(net_r[net_r < 0].sum()))
         wins = int((net > 0).sum())
+        symbol_drawdowns = []
+        for symbol, symbol_frame in frame.groupby("symbol"):
+            symbol_drawdowns.append({
+                "symbol": symbol,
+                **_risk_curve_metrics(symbol_frame),
+            })
+        dd_values = [x["max_drawdown_pct_at_1pct_risk"] for x in symbol_drawdowns]
+        holding = pd.to_numeric(frame.holding_minutes, errors="coerce")
         rows.append({
             "model": key[0],
             "variant": key[1],
@@ -39,11 +66,51 @@ def _aggregate_trade_rows(trades: pd.DataFrame) -> pd.DataFrame:
             "wins": wins,
             "losses": int(len(frame) - wins),
             "win_rate_pct": round(100 * wins / len(frame), 2),
-            "aggregate_trade_pf": round(gross_profit / gross_loss, 4) if gross_loss else None,
+            "aggregate_trade_pf_bps": round(gross_profit / gross_loss, 4) if gross_loss else None,
+            "aggregate_profit_factor_R": round(gross_profit_r / gross_loss_r, 4) if gross_loss_r else None,
             "net_bps_sum": round(float(net.sum()), 2),
-            "net_R_sum": round(float(pd.to_numeric(frame.net_R, errors="coerce").fillna(0).sum()), 3),
-            "avg_holding_minutes": round(float(pd.to_numeric(frame.holding_minutes, errors="coerce").mean()), 2),
-            "note": "Trade-level aggregation across symbols; not a capital-weighted portfolio return or drawdown",
+            "net_R_sum": round(float(net_r.sum()), 3),
+            "fixed_initial_equity_risk_return_pct_at_1pct": round(float(net_r.sum()), 3),
+            "avg_trade_bps": round(float(net.mean()), 3),
+            "avg_holding_minutes": round(float(holding.mean()), 2) if holding.notna().any() else None,
+            "median_holding_minutes": round(float(holding.median()), 2) if holding.notna().any() else None,
+            "worst_symbol_max_drawdown_pct_at_1pct_risk": round(min(dd_values), 3) if dd_values else None,
+            "median_symbol_max_drawdown_pct_at_1pct_risk": round(float(pd.Series(dd_values).median()), 3) if dd_values else None,
+            "symbol_drawdowns_json": json.dumps(symbol_drawdowns, sort_keys=True),
+            "note": "Trade-level aggregation across independent symbol streams; not a capital-weighted portfolio return or portfolio drawdown",
+        })
+    return pd.DataFrame(rows)
+
+
+def _aggregate_yearly_trade_rows(trades: pd.DataFrame) -> pd.DataFrame:
+    if trades.empty:
+        return pd.DataFrame()
+    frame = trades.copy()
+    frame["year"] = pd.to_datetime(frame.exit_time, utc=True).dt.year
+    rows = []
+    for key, group in frame.groupby(["model", "variant", "timeframe", "year"], dropna=False):
+        net = pd.to_numeric(group.net_bps, errors="coerce").fillna(0.0)
+        net_r = pd.to_numeric(group.net_R, errors="coerce").fillna(0.0)
+        gp = float(net[net > 0].sum())
+        gl = abs(float(net[net <= 0].sum()))
+        gp_r = float(net_r[net_r > 0].sum())
+        gl_r = abs(float(net_r[net_r < 0].sum()))
+        wins = int((net > 0).sum())
+        rows.append({
+            "model": key[0],
+            "variant": key[1],
+            "timeframe": key[2],
+            "year": int(key[3]),
+            "symbol_streams": int(group.symbol.nunique()),
+            "trades": int(len(group)),
+            "win_rate_pct": round(100 * wins / len(group), 2),
+            "aggregate_trade_pf_bps": round(gp / gl, 4) if gl else None,
+            "aggregate_profit_factor_R": round(gp_r / gl_r, 4) if gl_r else None,
+            "net_bps_sum": round(float(net.sum()), 2),
+            "net_R_sum": round(float(net_r.sum()), 3),
+            "fixed_initial_equity_risk_return_pct_at_1pct": round(float(net_r.sum()), 3),
+            "avg_holding_minutes": round(float(pd.to_numeric(group.holding_minutes, errors="coerce").mean()), 2),
+            "note": "Same-model yearly aggregation across symbol streams; not a portfolio return",
         })
     return pd.DataFrame(rows)
 
@@ -67,6 +134,7 @@ def main():
     if not trades.empty:
         trades.to_csv(out / "all_trade_ledger.csv", index=False)
         _aggregate_trade_rows(trades).to_csv(out / "same_model_cross_symbol_trade_summary.csv", index=False)
+        _aggregate_yearly_trade_rows(trades).to_csv(out / "same_model_cross_symbol_yearly_summary.csv", index=False)
 
     metadata = []
     for path in sorted(root.rglob("run_summary.json")):
