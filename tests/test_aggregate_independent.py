@@ -41,3 +41,21 @@ def test_cross_symbol_yearly_summary_is_separate_by_calendar_year():
     assert result.year.tolist() == [2025, 2026]
     assert result.trades.tolist() == [2, 2]
     assert result.net_R_sum.tolist() == [1.0, -1.0]
+
+
+def test_data_gap_trade_rows_are_audited_but_excluded_from_metrics():
+    trades = _trades()
+    trades["exit_reason"] = ["TARGET", "STOP", "TARGET", "DATA_GAP"]
+
+    aggregate = _aggregate_trade_rows(trades).iloc[0]
+    assert aggregate.trades == 3
+    assert aggregate.total_trade_records == 4
+    assert aggregate.data_gap_trades == 1
+    assert aggregate.net_R_sum == 2.0
+    assert aggregate.aggregate_profit_factor_R == 3.0
+
+    yearly = _aggregate_yearly_trade_rows(trades).sort_values("year")
+    assert yearly.year.tolist() == [2025, 2026]
+    assert yearly.trades.tolist() == [2, 1]
+    assert yearly.data_gap_trades.tolist() == [0, 1]
+    assert yearly.net_R_sum.tolist() == [1.0, 1.0]
