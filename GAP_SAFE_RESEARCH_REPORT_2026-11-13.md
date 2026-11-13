@@ -162,3 +162,64 @@ Bootstrap diagnostic: 500 moving-block resamples per symbol, 20-trade blocks, 20
 - Binance Vision published data terms restrict these datasets to non-commercial research and personal non-production historical backtesting; separate rights are needed before commercial or live proprietary use.
 
 See [RESEARCH_SOURCES.md](RESEARCH_SOURCES.md) for implementation references and licence notes.
+
+---
+
+## Follow-on gap-safe combination and forward-data audit — 13 November 2026
+
+The completed one-factor and within-model combination artifacts were re-opened and recalculated from the actual trade ledgers. The following six combinations are shown because they are the strongest independent M6/M11 candidates under the predeclared 2021–2024 development and 2025 validation windows. The 2026 column remains retrospective audit evidence because 2026 was exposed in the broad sweeps.
+
+### Selected M6 combinations — 4h
+
+| Variant | Period | Trades | Net-bps PF | R PF | Net-R | Win % | Avg hold | Worst symbol DD at 1% risk |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| D100_RR3_H168 | 2021–24 dev | 768 | 1.462 | 1.471 | +198.40 | 41.7 | 91.5h | -11.03% |
+|  | 2025 validation | 187 | 0.917 | 1.076 | +8.28 | 38.0 | 88.5h | -9.22% |
+|  | 2026 retrospective | 163 | 1.489 | 1.452 | +37.07 | 43.6 | 100.6h | -7.62% |
+| D100_STOP2_H168 | 2021–24 dev | 994 | 1.216 | 1.268 | +155.45 | 42.0 | 56.3h | -16.78% |
+|  | 2025 validation | 243 | 0.950 | 1.103 | +15.52 | 38.3 | 53.2h | -9.63% |
+|  | 2026 retrospective | 215 | 1.301 | 1.268 | +31.95 | 43.3 | 60.8h | -8.31% |
+| D100_VOL12_RR3_H168 | 2021–24 dev | 753 | 1.458 | 1.475 | +196.71 | 41.7 | 90.7h | -11.35% |
+|  | 2025 validation | 185 | 0.922 | 1.092 | +9.92 | 38.4 | 88.8h | -8.97% |
+|  | 2026 retrospective | 158 | 1.551 | 1.505 | +39.88 | 43.7 | 100.8h | -9.56% |
+
+M6 caution: all three selected combinations have a 2025 net-bps PF below 1.0 even though R-based PF and net-R are positive. This divergence means the combinations are not a clean validation pass. The 168h variants also tie up positions for roughly 90–100 hours on average. They remain research candidates, not selections. The simpler D100_RR3_H168 variant has the highest development net-R, while D100_STOP2_H168 has shorter holding time but a worse historical worst-symbol drawdown.
+
+### Selected M11 combinations — 4h
+
+| Variant | Period | Trades | Net-bps PF | R PF | Net-R | Win % | Avg hold | Worst symbol DD at 1% risk |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| OI05_RR3_H48 | 2021–24 dev | 321 | 1.337 | 1.396 | +51.39 | 44.5 | 38.6h | -6.55% |
+|  | 2025 validation | 158 | 1.245 | 1.232 | +15.35 | 45.6 | 39.1h | -8.58% |
+|  | 2026 retrospective | 200 | 1.197 | 1.117 | +10.40 | 42.5 | 38.2h | -8.82% |
+| OI05_PRICE025_RR3_H48 | 2021–24 dev | 346 | 1.349 | 1.392 | +54.99 | 45.1 | 38.5h | -7.24% |
+|  | 2025 validation | 162 | 1.258 | 1.233 | +15.91 | 45.7 | 39.0h | -7.99% |
+|  | 2026 retrospective | 211 | 1.164 | 1.069 | +6.60 | 41.7 | 38.2h | -9.42% |
+| OI05_PRICE025_RR3_H72 | 2021–24 dev | 332 | 1.413 | 1.445 | +70.05 | 44.0 | 51.0h | -7.44% |
+|  | 2025 validation | 153 | 1.247 | 1.264 | +20.82 | 43.8 | 51.5h | -7.59% |
+|  | 2026 retrospective | 199 | 1.010 | 0.972 | -3.16 | 37.7 | 49.9h | -13.04% |
+
+M11's two 48h variants are the cleaner validation candidates because both development and 2025 have net-bps PF and R PF above 1.0, with positive net-R. The OI05_PRICE025_RR3_H72 variant is not retained as a leading candidate: its 2026 retrospective R PF fell below 1.0 and net-R was negative. The 48h OI-only version has slightly better 2026 audit performance; the price-threshold version has a lower worst-symbol drawdown through 2025 but slightly weaker 2026 audit performance. Do not choose between them from the retrospective 2026 values.
+
+### Full OHLC cost re-execution and block bootstrap
+
+A new full cost-stress workflow has been added. Unlike the earlier ledger repricing diagnostic, it re-runs the same OHLC path with four per-side cost settings:
+
+- 5 bps fee / 2 bps slippage (baseline);
+- 7.5 bps fee / 3 bps slippage;
+- 10 bps fee / 5 bps slippage;
+- 15 bps fee / 10 bps slippage.
+
+It tests three predeclared variants per model, keeps M6 and M11 separate, and runs a 500-resample moving-block bootstrap with 20-trade blocks per symbol stream. Annual fixed-parameter results are also exported for chronological stability review. This workflow is currently running: [Independent M6–M11 Full Cost Stress Research](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43473850295). The regression suite passed on its two active symbol jobs; the full cost results are not yet available.
+
+### Forward holdout data availability
+
+The forward-only workflow now uses official Binance Vision daily USD-M 1m candle archives and daily OI metrics archives, rather than the region-restricted Binance futures REST endpoint. The daily candle parser has been adjusted to the actual USD-M archive headers (count, taker_buy_volume, taker_buy_quote_volume) and the post-2026-06-25 OI metric labels are shifted +5 minutes to their actual availability time to avoid lookahead.
+
+However, the attempted official daily funding-rate archive paths for 2026-11-01 through 2026-11-12 returned 404 for all requested days. The public REST funding endpoint had previously returned HTTP 451 from the runner region. The official monthly funding archive for November is not yet published, so the November forward holdout cannot currently be scored with funding costs. The runner now fails closed: it records candle/OI data and marks every M6/M11 profile DATA_GATED_FUNDING_ARCHIVE_PENDING instead of silently treating funding as zero or producing misleading PnL. The forward workflow is [Forward Holdout M6/M11](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43474084425). Re-run the scored forward period once Binance publishes the November monthly funding archive.
+
+### Current research decision
+
+- M11 4h 48h OI-pressure candidates are the strongest current research leads; both have positive development and 2025 results on both net-bps PF and R PF. They still need full cost stress, walk-forward diagnostics, Monte Carlo review and a properly funded forward holdout.
+- M6 4h remains promising, but the within-model combinations have weaker 2025 net-bps PF than their R-based PF suggests and hold positions for long periods. They need careful cost, capital-utilization and risk-geometry scrutiny.
+- No model is approved for live trading. M3 remains untouched.
