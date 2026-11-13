@@ -6,6 +6,7 @@ on:
     paths:
       - "crypto_research/backtest.py"
       - "tests/test_backtest.py"
+      - "tests/test_sensitivity.py"
       - ".github/workflows/funding-audit-tests.yml"
 
 permissions:
