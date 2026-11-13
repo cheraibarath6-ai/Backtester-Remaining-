@@ -11,7 +11,7 @@ on:
       - "crypto_research/metrics.py"
       - "crypto_research/combination_run.py"
       - "crypto_research/independent_models.py"
-      - "tests/test_walkforward.py"
+      - "tests/test_walkforward.py"\n      - "tests/test_combinations.py"
   pull_request:
     branches: [main]
     paths:
