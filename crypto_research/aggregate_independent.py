@@ -78,7 +78,12 @@ def main():
 
     development_positive = pd.DataFrame()
     development_and_validation_positive = pd.DataFrame()
-    if not results.empty:
+    status_counts = results.status.value_counts(dropna=False).rename_axis("status").reset_index(name="rows") if not results.empty and "status" in results.columns else pd.DataFrame()
+    if not status_counts.empty:
+        status_counts.to_csv(out / "status_counts.csv", index=False)
+    required_dev = {"development_trades", "development_profit_factor", "development_net_R"}
+    required_val = {"validation_2025_trades", "validation_2025_profit_factor", "validation_2025_net_R"}
+    if not results.empty and required_dev.issubset(results.columns):
         development_positive = results[
             (results.status == "COMPLETED")
             & (pd.to_numeric(results.development_trades, errors="coerce").fillna(0) >= 100)
@@ -86,11 +91,12 @@ def main():
             & (pd.to_numeric(results.development_net_R, errors="coerce") > 0)
         ].copy()
         development_positive.to_csv(out / "development_positive_candidates.csv", index=False)
-        development_and_validation_positive = development_positive[
-            (pd.to_numeric(development_positive.validation_2025_trades, errors="coerce").fillna(0) >= 50)
-            & (pd.to_numeric(development_positive.validation_2025_profit_factor, errors="coerce") > 1.0)
-            & (pd.to_numeric(development_positive.validation_2025_net_R, errors="coerce") > 0)
-        ].copy()
+        if required_val.issubset(development_positive.columns):
+            development_and_validation_positive = development_positive[
+                (pd.to_numeric(development_positive.validation_2025_trades, errors="coerce").fillna(0) >= 50)
+                & (pd.to_numeric(development_positive.validation_2025_profit_factor, errors="coerce") > 1.0)
+                & (pd.to_numeric(development_positive.validation_2025_net_R, errors="coerce") > 0)
+            ].copy()
         development_and_validation_positive.to_csv(
             out / "development_and_2025_positive_candidates.csv", index=False
         )
