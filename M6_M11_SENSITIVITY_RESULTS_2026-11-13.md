@@ -13,6 +13,10 @@
 
 This report supersedes the earlier pre-gap sensitivity figures. The executor now invalidates positions crossing missing-bar intervals as DATA_GAP, keeps those records in audit ledgers, excludes them from metrics, skips stale signals after gaps and resets indicator/VWAP/OI/benchmark histories at segment boundaries. The full screen ledger retained 54 DATA_GAP records across the seven symbols; these are excluded from performance metrics. M3 remains untouched.
 
+
+
+> **Additional timestamp audit discovered after this report:** Binance USD-M daily metrics rows from 2026-06-25 onward label OI snapshots five minutes earlier than their actual availability. The historical loader originally did not apply this +5m shift. Development (2021–2024) and 2025 validation figures below are unaffected; all M11 2026 retrospective values in this report are provisional and must not be used for selection. The forward-only loader already applied the shift. The historical loader is now corrected and the full screen, one-factor sweep, combinations, and tests are being rerun: [core screen 43475018639](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43475018639), [sensitivity 43475105074](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43475105074), [combinations 43475114006](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43475114006), [audit tests 43475126673](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43475126673). A corrected full cost-stress run is queued at [43475120490](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43475120490). Earlier 2026 M11 audit metrics are superseded once those runs finish.
+
 ## Metrics interpretation
 
 - Net-bps PF = sum of positive trade net-bps divided by the absolute sum of negative trade net-bps.
