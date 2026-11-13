@@ -171,6 +171,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
       - name: Download walk-forward symbol artifacts
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           pattern: walkforward-*
