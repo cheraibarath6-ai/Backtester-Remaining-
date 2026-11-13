@@ -13,7 +13,7 @@ on:
       - "crypto_research/combination_run.py"
       - "crypto_research/independent_models.py"
   pull_request:
-    branches: [research/funding-notional-audit-v2]
+    branches: [main]
     paths:
       - ".github/workflows/m6-m11-cost-stress.yml"
       - "crypto_research/cost_stress_run.py"
