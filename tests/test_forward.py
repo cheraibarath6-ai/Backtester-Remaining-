@@ -9,7 +9,7 @@ from crypto_research.forward_run import (
 
 
 def test_forward_mask_preserves_warmup_but_disables_pre_evaluation_entries():
-    index = pd.date_range("2026-10-31 16:00:00", periods=4, freq="4h", tz="UTC")
+    index = pd.date_range("2026-10-31 20:00:00", periods=4, freq="4h", tz="UTC")
     signals = pd.DataFrame(
         {"signal": [1, -1, 1, -1], "close": [100.0, 101.0, 102.0, 103.0]},
         index=index,
