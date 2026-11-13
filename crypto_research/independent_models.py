@@ -184,9 +184,17 @@ def make_independent_signals(
         if oi_col not in open_interest.columns:
             raise ValueError("M11 open-interest data has no recognized OI field")
         oi = pd.to_numeric(open_interest[oi_col], errors="coerce").sort_index()
-        oi = oi.reindex(d.index, method="ffill")
-        oi_change = oi.pct_change(12)
-        price_change = d.close.pct_change(12)
+        tf_minutes = {"1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30,
+                      "1h": 60, "2h": 120, "4h": 240, "6h": 360,
+                      "12h": 720, "1d": 1440}[timeframe]
+        # Only carry a source snapshot forward within one strategy bar.
+        # Long gaps stay missing rather than creating synthetic OI signals.
+        oi = oi.reindex(
+            d.index, method="ffill",
+            tolerance=pd.Timedelta(minutes=tf_minutes),
+        )
+        oi_change = oi.pct_change(12, fill_method=None)
+        price_change = d.close.pct_change(12, fill_method=None)
         long = (oi_change >= 0.01) & (price_change >= 0.005) & (d.taker_ratio >= 0.55)
         short = (oi_change >= 0.01) & (price_change <= -0.005) & (d.taker_ratio <= 0.45)
         _set_atr_stops(d, long, short, 2.0)
