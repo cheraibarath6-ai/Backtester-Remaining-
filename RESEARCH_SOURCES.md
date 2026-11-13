@@ -41,3 +41,13 @@ This document records public research sources inspected for the independent-engi
 - All results must be net of fees, slippage and perpetual funding cashflows.
 - Funding cashflows apply to every open USD-M perpetual position at a settlement timestamp. Funding is an M5 signal feature only for M5; it is not an M5-only holding cost.
 - A strategy is not selected from an in-sample PF ranking. Chronological validation and holdout evidence are required.
+
+
+## Public candidates screened out or treated cautiously
+
+- [MultiMa](https://github.com/davidzr/freqtrade-strategies/blob/main/strategies/MultiMa/MultiMa.py) reports only 18 trades in its embedded 2,000-candle optimisation note. It may be worth a later low-frequency experiment, but it does not meet our preferred trade-count evidence threshold as published.
+- [UniversalMACD](https://github.com/freqtrade/freqtrade-strategies/blob/main/user_data/strategies/UniversalMACD.py) embeds a 40-trade long-only spot result. That is too small to substantiate the reported high win rate; the code's own comments also show a 5-minute spot setup. It is not included in the first-pass engine set because M15 already tests an independent MACD/Awesome Oscillator family.
+- [SupertrendStrategy](https://github.com/davidzr/freqtrade-strategies/blob/main/strategies/SupertrendStrategy/SupertrendStrategy.py) embeds a 202-trade ADA/USDT spot result from 2018-04-18 to 2021-08-18, with a reported 59.98% drawdown. It is a potential future candidate, but the single-pair historical result and drawdown do not establish a robust futures edge.
+- The [SuperTrend strategy](https://github.com/davidzr/freqtrade-strategies/blob/main/strategies/SuperTrend/SuperTrend.py) explicitly cautions that its custom indicator implementation is not validated against the original paper or another trusted reference. Any later Supertrend test must independently validate the indicator calculation first.
+
+These public embedded results are not independently verified and are not used as our performance evidence. The first-pass set favours strategy families that can be implemented transparently and tested with the same futures execution model.
