@@ -5,6 +5,7 @@ on:
     branches: [research/funding-notional-audit-v2]
     paths:
       - "crypto_research/backtest.py"
+      - "crypto_research/metrics.py"
       - "crypto_research/independent_models.py"
       - "crypto_research/sensitivity_run.py"
       - "crypto_research/aggregate_independent.py"
