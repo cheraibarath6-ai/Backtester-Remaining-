@@ -8,7 +8,14 @@ import pandas as pd
 
 
 def _load(root: Path, name: str) -> pd.DataFrame:
-    parts = [pd.read_csv(path) for path in root.rglob(name)]
+    parts = []
+    for path in root.rglob(name):
+        try:
+            frame = pd.read_csv(path)
+        except pd.errors.EmptyDataError:
+            continue
+        if not frame.empty:
+            parts.append(frame)
     return pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
 
 
