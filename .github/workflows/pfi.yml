@@ -1,0 +1,59 @@
+name: PFI Progressive Factor Isolation
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/pfi.yml"
+  workflow_dispatch:
+    inputs:
+      start:
+        description: Inclusive UTC start date
+        required: true
+        default: "2021-01-01"
+      end:
+        description: Exclusive UTC end date
+        required: true
+        default: "2026-11-13"
+permissions:
+  contents: read
+concurrency:
+  group: pfi-stage1-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  pfi:
+    name: PFI Stage 1 / ${{ matrix.model }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        model: [M1, M2, M4, M5]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Compile and test
+        run: python -m compileall -q crypto_research tests && python -m pytest -q
+      - name: Run PFI factor isolation
+        run: >
+          python -m crypto_research.pfi
+          --start "${{ inputs.start || '2021-01-01' }}"
+          --end "${{ inputs.end || '2026-11-13' }}"
+          --symbols BTCUSDT ETHUSDT
+          --timeframes 5m 15m
+          --models "${{ matrix.model }}"
+          --fee-bps 5 --slippage-bps 2 --rr 2
+          --out pfi_artifacts
+      - name: Upload PFI results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pfi-stage1-${{ matrix.model }}
+          path: pfi_artifacts/
+          if-no-files-found: warn
+          retention-days: 90
