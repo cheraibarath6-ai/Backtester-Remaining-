@@ -98,16 +98,22 @@ None of the baseline profiles has positive aggregate net-R across the full test 
 - Open interest: official Binance daily metrics. BTC coverage is 99.902% from 2021-01-01. Other symbols begin 2021-12-01, so full-range coverage is approximately 84.3%; all expected archive days from their available start were downloaded. This is a listing/history boundary, not 15.7% random missing data.
 - M11 does not have historical liquidation-event data. It must not be described as a liquidation-pressure engine yet.
 
-## Backtest audit items before parameter search
+## Backtest audit fixes and next tests
 
-The first screen verified next-bar entry, entry-bar stop/target checking, conservative stop-first handling when both barriers touch, fees/slippage, and funding settlement charges across all perpetual models. The following issues remain and will be fixed before the next full run:
+The first-pass figures above were produced before the following audit corrections, so they are provisional and will be superseded by the corrected rerun.
 
-1. M13 BTC impulse must be shifted to a prior, non-overlapping window; current same-window results are invalid.
-2. Stop exits must account for an opening gap through the stop rather than always filling at the stop price.
-3. Higher-timeframe resampling should reject incomplete bars when underlying 1-minute candles are missing.
-4. The current summary's compounded net_return_pct/max_drawdown_pct assumes 100% notional is reinvested on every trade. It is not an account-equity curve. We will replace it with clearly labelled fixed-risk and fixed-notional measures and keep portfolio returns separate.
-5. The 24-hour max-hold cap dominates exits for M6/M11. Test 12h/24h/48h/72h, and separately test the public MIT Donchian H1/H4 trailing-stop variant.
-6. Stress costs above the baseline, test one-bar-late entries, and inspect top-trade concentration before considering a candidate robust.
+- Commit [a1b5e57](https://github.com/cheraibarath6-ai/Backtester-Remaining-/commit/a1b5e5748f7278b858c0d626b71139d01397bcc7) adds adverse opening-gap stop fills, rejects incomplete resampled candles, shifts M13's BTC impulse into a prior non-overlapping window, and replaces the misleading 100%-notional compounding summary with fixed-initial-equity-risk metrics.
+- Regression tests were added for gap-stop fills, fixed-risk return/drawdown, incomplete candles and causal M13 lead-lag behavior.
+- Corrected full seven-symbol rerun: https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43421757748
+
+The corrected summary now defines net_return_pct as net-R multiplied by a configurable fixed risk percentage (default 1% of initial equity per trade, not compounded). max_drawdown_pct uses that same fixed-risk curve. Fixed 1x-notional cumulative PnL and drawdown are separate fields. This is a standardized research comparison, not a capital-weighted portfolio return; no leverage/margin cap or concurrent multi-symbol allocation is assumed.
+
+Still required before selection:
+1. Test 12h/24h/48h/72h holding limits and a wider/trailing exit for M6/M11; the 24h cap dominates current exits.
+2. Test the public MIT Donchian H1/H4 bias + ATR/chandelier variant as an independent M6 variant.
+3. Run one-factor-at-a-time parameter sweeps on M11 and M6 using development only; validate on 2025, then preserve an unseen-symbol/future holdout.
+4. Stress fees/slippage, one-bar-late entries and trade concentration.
+5. M11 liquidation pressure remains unavailable as a complete historical series; do not infer it from OI.
 
 ## Public-source leads
 
