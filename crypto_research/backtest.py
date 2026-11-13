@@ -55,6 +55,11 @@ def run_backtest(
         funding = funding.sort_index()
         funding_index = funding.index
         funding_rates = pd.to_numeric(funding.funding_rate, errors="coerce").to_numpy(dtype=float)
+        funding_marks = (
+            pd.to_numeric(funding["mark_price"], errors="coerce").to_numpy(dtype=float)
+            if "mark_price" in funding.columns
+            else np.full(len(funding), np.nan, dtype=float)
+        )
 
     trades = []
     pos = None
@@ -63,16 +68,33 @@ def run_backtest(
         side = position["side"]
         exit_fill = float(exit_px) * (1 - side * slippage_bps / 10000)
         gross = side * (exit_fill - position["entry"]) / position["entry"]
-        fees = 2 * fee_bps / 10000
+        # USD-M contracts keep a fixed base quantity: entry and exit fees are
+        # charged on their respective executed notionals, not twice the entry
+        # notional. All costs below are expressed relative to entry notional.
+        fee_rate = fee_bps / 10000
+        fees = fee_rate * (1 + exit_fill / position["entry"])
 
-        # Include an event exactly at entry conservatively because settlement
-        # timestamps may deviate by seconds. Searchsorted avoids scanning all
-        # funding rows for every trade.
+        # Funding is charged/credited on the mark-price notional at settlement.
+        # Prefer Binance's published mark price when available; otherwise use
+        # the latest completed strategy-bar close at or before the settlement
+        # timestamp (never a future bar). Convert the cashflow to entry-notional
+        # terms so it is comparable with gross PnL and net R.
         fund_cost = 0.0
         if funding_index is not None:
             first = funding_index.searchsorted(position["entry_time"], side="left")
             last = funding_index.searchsorted(ts, side="right")
-            fund_cost = float(np.nansum(side * funding_rates[first:last]))
+            if last > first:
+                rates = funding_rates[first:last]
+                marks = funding_marks[first:last].copy()
+                for j, event_time in enumerate(funding_index[first:last]):
+                    if not np.isfinite(marks[j]) or marks[j] <= 0:
+                        bar_i = index.searchsorted(event_time, side="right") - 1
+                        marks[j] = closes[bar_i] if bar_i >= 0 else position["entry"]
+                valid = np.isfinite(rates) & np.isfinite(marks) & (marks > 0)
+                if valid.any():
+                    fund_cost = float(np.sum(
+                        side * rates[valid] * marks[valid] / position["entry"]
+                    ))
 
         net = gross - fees - fund_cost
         risk = abs(position["entry"] - position["stop"]) / position["entry"]
