@@ -19,6 +19,10 @@ def combination_profiles(model: str) -> list[dict]:
         return [
             {"variant": "BASELINE_H24", "parameters": base.copy(), "rr": 2.0, "hold_hours": 24.0},
             {"variant": "HOLD_48H", "parameters": base.copy(), "rr": 2.0, "hold_hours": 48.0},
+            {"variant": "STOP2_H24", "parameters": {**base, "stop_atr": 2.0}, "rr": 2.0, "hold_hours": 24.0},
+            {"variant": "RR3_H24", "parameters": base.copy(), "rr": 3.0, "hold_hours": 24.0},
+            {"variant": "TRAIL25_H24", "parameters": base.copy(), "rr": 2.0, "hold_hours": 24.0, "trailing_atr_multiple": 2.5},
+            {"variant": "VOLUME12_H24", "parameters": {**base, "volume_ratio_min": 1.2}, "rr": 2.0, "hold_hours": 24.0},
             {"variant": "ANCHOR_H168", "parameters": base.copy(), "rr": 2.0, "hold_hours": 168.0},
             {"variant": "D100_H168", "parameters": {**base, "donchian_period": 100}, "rr": 2.0, "hold_hours": 168.0},
             {"variant": "STOP2_H168", "parameters": {**base, "stop_atr": 2.0}, "rr": 2.0, "hold_hours": 168.0},
