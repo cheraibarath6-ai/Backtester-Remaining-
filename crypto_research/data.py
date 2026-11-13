@@ -319,7 +319,20 @@ def quality_report(data, symbol, start=None, end=None):
         | (data.low > data[["open", "close", "high"]].min(axis=1))
         | (data.high < data.low)
     ).sum()
-    missing = len(expected.difference(data.index))
+    missing_index = expected.difference(data.index)
+    missing = len(missing_index)
+    missing_intervals = []
+    if missing:
+        missing_frame = pd.DataFrame({"timestamp": missing_index})
+        missing_frame["gap_group"] = (
+            missing_frame.timestamp.diff().ne(pd.Timedelta(minutes=1)).cumsum()
+        )
+        for _, group in missing_frame.groupby("gap_group", sort=True):
+            missing_intervals.append({
+                "start": str(group.timestamp.iloc[0]),
+                "end": str(group.timestamp.iloc[-1]),
+                "minutes": int(len(group)),
+            })
     coverage = 100 * (len(expected) - missing) / len(expected) if len(expected) else 0.0
     return {
         "symbol": symbol,
@@ -328,6 +341,9 @@ def quality_report(data, symbol, start=None, end=None):
         "end": str(data.index.max()),
         "expected_minutes": len(expected),
         "missing_minutes": missing,
+        "missing_interval_count": len(missing_intervals),
+        "missing_intervals": missing_intervals[:100],
+        "missing_intervals_truncated": len(missing_intervals) > 100,
         "coverage_pct": round(coverage, 4),
         "duplicate_timestamps": int(data.attrs.get("duplicate_timestamps_before_dedup", 0)),
         "bad_ohlc_rows": int(bad),
