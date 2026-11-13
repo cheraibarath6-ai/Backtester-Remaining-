@@ -152,3 +152,14 @@ Other public strategy references and their licences are recorded in [RESEARCH_SO
 - **Not proven:** none has passed the complete sequence of independent walk-forward, baseline-inclusive full cost stress, Monte Carlo, and a funding-complete forward holdout.
 - **Not selected:** M7, M9, M10, M12, M13 and M15 have not demonstrated robust net expectancy under the tested settings; M10/M14 positive full-period sums are undermined by drawdown and/or 2026 deterioration.
 - No engine is approved for live trading. M3 remains untouched.
+
+
+## Latest baseline-inclusive reruns — 14 November
+
+The original 24h M6/M11 screen profiles were added to the within-model profile universe after the completed cost-stress run above. The earlier run 43475120490 is therefore not the final stress comparison for those original baselines.
+
+- [Baseline-inclusive full cost stress PR run 43503121592](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43503121592): pending at the last inspection; BTC and ETH jobs were in progress, with the other five symbol jobs queued. Each symbol job compiles the research package and runs the complete pytest suite before re-execution.
+- [Updated within-model combination PR run 43503121351](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43503121351): pending at the last inspection; job creation had not yet completed.
+- The new [expanding-window walk-forward workflow](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/workflows/m6-m11-walkforward.yml) is on the branch. Its execution/artifacts are not yet verified here.
+
+The latest branch comparison against `main` is 84 commits ahead across 34 changed files. The compare response contains **no M3 path**. All research changes remain confined to the independent-engine research, data/accounting, tests, reports and workflow files.
