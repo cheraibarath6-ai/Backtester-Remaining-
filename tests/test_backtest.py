@@ -1,7 +1,7 @@
 import pandas as pd
 
 from crypto_research.backtest import run_backtest, summarize
-from crypto_research.data import _timestamp_unit
+from crypto_research.data import _timestamp_unit, quality_report
 
 
 def _bars(entry_high=105.0, entry_low=99.0):
@@ -197,3 +197,67 @@ def test_summary_uses_fixed_risk_not_full_notional_compounding():
     assert abs(stats["max_drawdown_pct"] - (-2.941)) < 0.01
     assert stats["max_drawdown_R"] == -3.0
     assert stats["risk_per_trade_pct"] == 1.0
+
+
+
+def test_open_position_crossing_missing_bar_is_invalidated_and_not_scored():
+    index = pd.DatetimeIndex([
+        "2024-01-01 00:05:00+00:00",
+        "2024-01-01 00:10:00+00:00",
+        "2024-01-01 00:15:00+00:00",
+        "2024-01-01 00:30:00+00:00",
+        "2024-01-01 00:35:00+00:00",
+    ])
+    bars = pd.DataFrame(
+        {
+            "open": [100.0] * 5,
+            "high": [101.0, 102.0, 102.0, 103.0, 103.0],
+            "low": [99.0, 98.0, 98.0, 97.0, 97.0],
+            "close": [100.0, 101.0, 101.0, 102.0, 102.0],
+            # The signal on the last pre-gap bar must not enter after the gap.
+            "signal": [1, 0, 1, 0, 0],
+            "stop": [90.0, float("nan"), 90.0, float("nan"), float("nan")],
+            "target": [float("nan")] * 5,
+        },
+        index=index,
+    )
+    trades = run_backtest(
+        bars, None, "BTCUSDT", "M6", "5m",
+        fee_bps=0, slippage_bps=0, rr=20,
+    )
+    assert len(trades) == 1
+    assert trades.iloc[0].exit_reason == "DATA_GAP"
+    assert trades.iloc[0].holding_bars == 2
+    stats = summarize(trades)
+    assert stats["trades"] == 0
+    assert stats["data_gap_trades"] == 1
+    assert stats["total_trade_records"] == 1
+    assert stats["net_R"] == 0.0
+
+
+def test_quality_report_lists_contiguous_missing_minute_intervals():
+    index = pd.DatetimeIndex([
+        "2024-01-01 00:00:00+00:00",
+        "2024-01-01 00:01:00+00:00",
+        "2024-01-01 00:04:00+00:00",
+        "2024-01-01 00:05:00+00:00",
+    ])
+    data = pd.DataFrame(
+        {
+            "open": [100.0] * 4,
+            "high": [101.0] * 4,
+            "low": [99.0] * 4,
+            "close": [100.0] * 4,
+        },
+        index=index,
+    )
+    quality = quality_report(
+        data, "BTCUSDT",
+        start="2024-01-01 00:00:00",
+        end="2024-01-01 00:06:00",
+    )
+    assert quality["missing_minutes"] == 2
+    assert quality["missing_interval_count"] == 1
+    assert quality["missing_intervals"][0]["start"] == "2024-01-01 00:02:00+00:00"
+    assert quality["missing_intervals"][0]["end"] == "2024-01-01 00:03:00+00:00"
+    assert quality["missing_intervals"][0]["minutes"] == 2
