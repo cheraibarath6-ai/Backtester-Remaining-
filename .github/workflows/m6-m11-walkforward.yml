@@ -12,6 +12,17 @@ on:
       - "crypto_research/combination_run.py"
       - "crypto_research/independent_models.py"
       - "tests/test_walkforward.py"
+  pull_request:
+    branches: [research/funding-notional-audit-v2]
+    paths:
+      - ".github/workflows/m6-m11-walkforward.yml"
+      - "crypto_research/walkforward_run.py"
+      - "crypto_research/aggregate_walkforward.py"
+      - "crypto_research/backtest.py"
+      - "crypto_research/metrics.py"
+      - "crypto_research/combination_run.py"
+      - "crypto_research/independent_models.py"
+      - "tests/test_walkforward.py"
   workflow_dispatch:
     inputs:
       start:
@@ -27,7 +38,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: independent-m6-m11-walkforward-${{ github.ref }}
+  group: independent-m6-m11-walkforward-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
