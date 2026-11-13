@@ -223,3 +223,10 @@ The attempted official daily funding-rate archive paths for 2026-11-01 through 2
 - M11 4h 48h OI-pressure candidates are the strongest current research leads; both have positive development and 2025 results on both net-bps PF and R PF. They still need full cost stress, walk-forward diagnostics, Monte Carlo review and a properly funded forward holdout.
 - M6 4h remains promising, but the within-model combinations have weaker 2025 net-bps PF than their R-based PF suggests and hold positions for long periods. They need careful cost, capital-utilization and risk-geometry scrutiny.
 - No model is approved for live trading. M3 remains untouched.
+
+
+## Additional historical OI timestamp correction — 13 November 2026
+
+A final data-timing audit found that Binance USD-M metrics rows from 2026-06-25 onward carry an OI snapshot at T+5 minutes while the original historical metrics loader treated the row label T as the availability time. This creates up to five minutes of lookahead for M11 in the 2026 retrospective period. The forward-only loader had already applied the +5m availability shift; the historical loader is now corrected and regression-tested. The 2021–2024 development and 2025 validation M11 figures in this report are unaffected, but **all M11 2026 retrospective figures and the earlier cost-stress 2026 outputs are provisional and must not be used**. M6 and all non-OI models are unaffected by this specific correction.
+
+Corrected reruns are underway: [core screen 43475018639](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43475018639), [M6/M11 sensitivity 43475105074](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43475105074), [M6/M11 combinations 43475114006](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43475114006), [funding/OI regression tests 43475126673](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43475126673), and corrected [full cost stress 43475120490](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43475120490). The older cost-stress run using the unshifted loader is not accepted for 2026 M11 conclusions.
