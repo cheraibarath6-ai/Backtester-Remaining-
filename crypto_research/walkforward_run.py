@@ -49,7 +49,7 @@ def completed_training_cohort(
     return trades.loc[mask].copy()
 
 
-def test_year_signals(
+def build_test_year_window(
     signals: pd.DataFrame, start: str | pd.Timestamp, end_exclusive: str | pd.Timestamp
 ) -> pd.DataFrame:
     """
@@ -288,7 +288,7 @@ def run_symbol(args) -> None:
                 continue
 
             profile = selected["profile"]
-            test_bars = test_year_signals(selected["signals"], year_start, year_end)
+            test_bars = build_test_year_window(selected["signals"], year_start, year_end)
             if test_bars.empty:
                 result_rows.append({
                     "symbol": symbol, "model": model, "year": year,
