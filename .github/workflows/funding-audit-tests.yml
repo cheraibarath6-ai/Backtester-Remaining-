@@ -12,7 +12,9 @@ on:
       - "tests/test_backtest.py"
       - "tests/test_sensitivity.py"
       - "tests/test_aggregate_independent.py"
-      - "tests/test_cost_stress.py"\n      - "tests/test_combinations.py"
+      - "tests/test_cost_stress.py"
+      - "tests/test_combinations.py"
+      - "tests/test_walkforward.py"
       - ".github/workflows/funding-audit-tests.yml"
   pull_request:
     branches: [main]
