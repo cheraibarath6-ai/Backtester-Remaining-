@@ -89,7 +89,7 @@ def test_acquire_klines_fills_monthly_gaps_from_official_daily_archive(tmp_path,
     )
     assert len(result) == 3
     assert report["coverage_pct"] == 100.0
-    assert result.attrs["source"] == "binance_vision_official_usdm_1m_monthly_plus_daily"
+    assert result.attrs["source"] == "binance_vision_official_usdm_1m"
     assert result.attrs["daily_gap_fill_attempted_days"] == ["2022-01-01"]
     assert result.attrs["daily_gap_fill_successful_days"] == ["2022-01-01"]
     assert result.attrs["daily_gap_fill_missing_days"] == []
