@@ -45,7 +45,7 @@ jobs:
       - name: Compile and test HEAD OR logic
         run: |
           python -m compileall -q crypto_research/head_engine.py crypto_research/aggregate_head.py
-          python -m pytest -q tests/test_head_engine.py tests/test_improvement_run.py
+          python -m pytest -q tests/test_head_engine.py tests/test_data_months.py tests/test_improvement_run.py
       - name: Run five-year HEAD backtest
         run: >
           python -m crypto_research.head_engine
