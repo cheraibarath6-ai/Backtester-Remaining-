@@ -315,7 +315,7 @@ def main():
     gaps = funding.index.to_series().diff().dropna() if not funding.empty else pd.Series(dtype="timedelta64[ns]")
     max_gap = float(gaps.max().total_seconds() / 3600) if not gaps.empty else None
     first_gap = float((funding.index.min() - raw.index.min()).total_seconds() / 3600) if not funding.empty else None
-    last_gap = float((_utc_end := pd.Timestamp(args.end, tz="UTC") - funding.index.max()).total_seconds() / 3600) if not funding.empty else None
+    last_gap = float((pd.Timestamp(args.end, tz="UTC") - funding.index.max()).total_seconds() / 3600) if not funding.empty else None
     if (funding.empty or source not in OFFICIAL_FUNDING_SOURCES or max_gap is None
             or max_gap > 8.5 or first_gap is None or first_gap < 0 or first_gap > 8.5
             or last_gap is None or last_gap < 0 or last_gap > 8.5):
