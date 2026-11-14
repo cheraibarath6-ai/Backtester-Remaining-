@@ -30,8 +30,6 @@ jobs:
         timeframe: ["1h", "4h"]
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: research/funding-notional-audit-v2
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -78,8 +76,6 @@ jobs:
     if: always()
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: research/funding-notional-audit-v2
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
