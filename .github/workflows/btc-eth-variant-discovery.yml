@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   discover:
-    name: 1h variants / \${{ matrix.symbol }}
+    name: 1h variants / ${{ matrix.symbol }}
     runs-on: ubuntu-latest
     timeout-minutes: 360
     strategy:
@@ -38,7 +38,7 @@ jobs:
       - name: Run independent 1h variant grid with 2025 holdout
         run: |
           python -m crypto_research.variant_discovery \
-            --symbol "\${{ matrix.symbol }}" \
+            --symbol "${{ matrix.symbol }}" \
             --start "2024-01-01" --split "2025-01-01" --end "2026-01-01" \
             --warmup-hours 1200 --fee-bps 5 --slippage-bps 2 \
             --out variant_discovery
@@ -46,7 +46,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: btc-eth-variant-discovery-\${{ matrix.symbol }}
+          name: btc-eth-variant-discovery-${{ matrix.symbol }}
           path: variant_discovery/
           if-no-files-found: warn
           retention-days: 90
