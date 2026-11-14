@@ -157,7 +157,14 @@ def acquire_klines(symbol, start, end, root=Path("data")):
             if daily_path:
                 parts.append(read_zip(daily_path))
     if not parts:
-        raise RuntimeError(f"No monthly or daily kline archives found for {symbol}")
+        # A 404 for every official archive in this date range can mean the
+        # USD-M contract was not yet listed. Return an explicit empty frame so
+        # HEAD can record zero coverage instead of failing or inventing data.
+        data = pd.DataFrame(columns=COLS)
+        data.index = pd.DatetimeIndex([], tz="UTC", name="open_time")
+        data.attrs["duplicate_timestamps_before_dedup"] = 0
+        data.attrs["source"] = "binance_vision_official_usdm_1m"
+        return data
 
     data = pd.concat(parts).sort_index()
     duplicate_count = int(data.index.duplicated().sum())
@@ -335,11 +342,24 @@ def acquire_funding(symbol, start, end, root=Path("data")):
 
 def quality_report(data, symbol, start=None, end=None):
     if data.empty:
+        expected_minutes = 0
+        if start is not None and end is not None:
+            expected_start = _utc_timestamp(start)
+            expected_end = _utc_timestamp(end)
+            expected_minutes = max(
+                0, int((expected_end - expected_start).total_seconds() // 60)
+            )
         return {
             "symbol": symbol, "rows": 0, "start": None, "end": None,
-            "expected_minutes": 0, "missing_minutes": None, "coverage_pct": 0.0,
+            "expected_minutes": expected_minutes,
+            "missing_minutes": expected_minutes,
+            "missing_interval_count": 1 if expected_minutes else 0,
+            "missing_intervals": [],
+            "missing_intervals_truncated": False,
+            "coverage_pct": 0.0,
             "duplicate_timestamps": int(data.attrs.get("duplicate_timestamps_before_dedup", 0)),
             "bad_ohlc_rows": 0,
+            "source": data.attrs.get("source", "unknown"),
         }
 
     if start is not None and end is not None:
