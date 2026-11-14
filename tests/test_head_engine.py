@@ -63,7 +63,7 @@ def test_batch_history_start_has_130_complete_4h_warmup_bars():
     from crypto_research.head_engine import batch_history_start
 
     assert batch_history_start("2022-01-01") == pd.Timestamp("2021-12-10 08:00:00", tz="UTC")
-    assert batch_history_start("2021-11-14") == pd.Timestamp("2021-11-14", tz="UTC")
+    assert batch_history_start("2021-11-14") == pd.Timestamp("2021-10-23 08:00:00", tz="UTC")
 
 
 def test_batch_trade_scoping_assigns_boundary_exit_once_and_keeps_cross_boundary_trade():
