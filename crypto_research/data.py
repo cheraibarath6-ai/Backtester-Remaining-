@@ -179,7 +179,7 @@ def acquire_klines(symbol, start, end, root=Path("data")):
         data = pd.DataFrame(columns=COLS)
         data.index = pd.DatetimeIndex([], tz="UTC", name="open_time")
         data.attrs["duplicate_timestamps_before_dedup"] = 0
-        data.attrs["source"] = "binance_vision_official_usdm_1m_monthly"
+        data.attrs["source"] = "binance_vision_official_usdm_1m"
         data.attrs["daily_gap_fill_attempted_days"] = sorted(daily_gap_fill_attempted)
         data.attrs["daily_gap_fill_successful_days"] = sorted(daily_archives_used)
         data.attrs["daily_gap_fill_missing_days"] = sorted(daily_gap_fill_missing)
@@ -241,8 +241,8 @@ def acquire_klines(symbol, start, end, root=Path("data")):
 
     data.attrs["duplicate_timestamps_before_dedup"] = duplicate_count
     data.attrs["source"] = (
-        "binance_vision_official_usdm_1m_monthly_plus_daily"
-        if daily_archives_used else "binance_vision_official_usdm_1m_monthly"
+        "binance_vision_official_usdm_1m"
+        if daily_archives_used else "binance_vision_official_usdm_1m"
     )
     data.attrs["daily_gap_fill_attempted_days"] = sorted(daily_gap_fill_attempted)
     data.attrs["daily_gap_fill_successful_days"] = sorted(daily_archives_used)
