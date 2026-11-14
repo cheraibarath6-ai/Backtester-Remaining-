@@ -160,22 +160,34 @@ def make_independent_signals(
         _set_atr_stops(d, long, short, stop_multiple)
 
     elif model == "M7":
-        long = (d.bb_z <= -2.0) & (d.rsi <= 35)
-        short = (d.bb_z >= 2.0) & (d.rsi >= 65)
-        _set_atr_stops(d, long, short, 1.5)
+        z_entry = float(parameters.get("bb_z_entry", 2.0))
+        rsi_long_max = float(parameters.get("rsi_long_max", 35.0))
+        rsi_short_min = float(parameters.get("rsi_short_min", 65.0))
+        stop_multiple = float(parameters.get("stop_atr", 1.5))
+        long = (d.bb_z <= -z_entry) & (d.rsi <= rsi_long_max)
+        short = (d.bb_z >= z_entry) & (d.rsi >= rsi_short_min)
+        _set_atr_stops(d, long, short, stop_multiple)
         d.loc[long, "target"] = d.loc[long, "bb_mid"]
         d.loc[short, "target"] = d.loc[short, "bb_mid"]
 
     elif model == "M8":
-        prior_squeeze_threshold = d.bb_width.shift(1).rolling(100, min_periods=50).quantile(0.20)
+        squeeze_lookback = int(parameters.get("squeeze_lookback", 100))
+        squeeze_quantile = float(parameters.get("squeeze_quantile", 0.20))
+        breakout_period = int(parameters.get("breakout_period", 20))
+        expansion_multiple = float(parameters.get("expansion_atr", 1.2))
+        volume_min = float(parameters.get("volume_ratio_min", 1.2))
+        stop_multiple = float(parameters.get("stop_atr", 2.0))
+        prior_squeeze_threshold = d.bb_width.shift(1).rolling(
+            squeeze_lookback, min_periods=max(20, squeeze_lookback // 2)
+        ).quantile(squeeze_quantile)
         squeeze = d.bb_width <= prior_squeeze_threshold
         recent_squeeze = squeeze.shift(1).rolling(6, min_periods=1).max().fillna(0).astype(bool)
-        prior_high = d.high.shift(1).rolling(20, min_periods=20).max()
-        prior_low = d.low.shift(1).rolling(20, min_periods=20).min()
-        expansion = (d.high - d.low) >= 1.2 * atr
-        long = recent_squeeze & (d.close > prior_high) & expansion & (d.volume_ratio >= 1.2)
-        short = recent_squeeze & (d.close < prior_low) & expansion & (d.volume_ratio >= 1.2)
-        _set_atr_stops(d, long, short, 2.0)
+        prior_high = d.high.shift(1).rolling(breakout_period, min_periods=breakout_period).max()
+        prior_low = d.low.shift(1).rolling(breakout_period, min_periods=breakout_period).min()
+        expansion = (d.high - d.low) >= expansion_multiple * atr
+        long = recent_squeeze & (d.close > prior_high) & expansion & (d.volume_ratio >= volume_min)
+        short = recent_squeeze & (d.close < prior_low) & expansion & (d.volume_ratio >= volume_min)
+        _set_atr_stops(d, long, short, stop_multiple)
 
     elif model == "M9":
         crossed_up = (d.close > d.session_vwap) & (d.close.shift(1) <= d.session_vwap.shift(1))
@@ -208,20 +220,29 @@ def make_independent_signals(
             20 if model == "M10" else 3, fill_method=None
         )
         if model == "M10":
-            lookback = 20
+            lookback = int(parameters.get("lookback", 20))
             relative = asset_return - btc_return
-            long = (relative >= 0.01) & (d.close > d.ema50) & (d.ema50 > d.ema200)
-            short = (relative <= -0.01) & (d.close < d.ema50) & (d.ema50 < d.ema200)
-            _set_atr_stops(d, long, short, 2.0)
+            threshold = float(parameters.get("relative_threshold", 0.01))
+            ema_fast_period = int(parameters.get("ema_fast", 50))
+            ema_slow_period = int(parameters.get("ema_slow", 200))
+            ema_fast = d[f"ema{ema_fast_period}"]
+            ema_slow = d[f"ema{ema_slow_period}"]
+            long = (relative >= threshold) & (d.close > ema_fast) & (ema_fast > ema_slow)
+            short = (relative <= -threshold) & (d.close < ema_fast) & (ema_fast < ema_slow)
+            _set_atr_stops(d, long, short, float(parameters.get("stop_atr", 2.0)))
         else:
-            lookback = 3
+            lookback = int(parameters.get("btc_lookback", 3))
             # BTC impulse must precede the altcoin response window. Shift
             # by one full lookback so the two return windows do not overlap.
             btc_impulse = btc_return.groupby(group_key, dropna=True).shift(lookback)
             asset_move = asset_return
-            long = (btc_impulse >= 0.006) & ((btc_impulse - asset_move) >= 0.003) & (d.close > d.ema20)
-            short = (btc_impulse <= -0.006) & ((asset_move - btc_impulse) >= 0.003) & (d.close < d.ema20)
-            _set_atr_stops(d, long, short, 2.0)
+            impulse_threshold = float(parameters.get("impulse_threshold", 0.006))
+            divergence_threshold = float(parameters.get("divergence_threshold", 0.003))
+            ema_period = int(parameters.get("ema_period", 20))
+            ema = d[f"ema{ema_period}"]
+            long = (btc_impulse >= impulse_threshold) & ((btc_impulse - asset_move) >= divergence_threshold) & (d.close > ema)
+            short = (btc_impulse <= -impulse_threshold) & ((asset_move - btc_impulse) >= divergence_threshold) & (d.close < ema)
+            _set_atr_stops(d, long, short, float(parameters.get("stop_atr", 2.0)))
 
     elif model == "M11":
         if open_interest is None or open_interest.empty:
@@ -264,32 +285,47 @@ def make_independent_signals(
         _set_atr_stops(d, long, short, stop_multiple)
 
     elif model == "M12":
-        prior_high = d.high.shift(1).rolling(20, min_periods=20).max()
-        prior_low = d.low.shift(1).rolling(20, min_periods=20).min()
-        trend_long = (d.adx >= 25) & (d.close > prior_high)
-        trend_short = (d.adx >= 25) & (d.close < prior_low)
-        range_long = (d.adx <= 18) & (d.bb_z <= -2.0) & (d.rsi <= 35)
-        range_short = (d.adx <= 18) & (d.bb_z >= 2.0) & (d.rsi >= 65)
+        breakout_period = int(parameters.get("breakout_period", 20))
+        trend_adx_min = float(parameters.get("trend_adx_min", 25.0))
+        range_adx_max = float(parameters.get("range_adx_max", 18.0))
+        range_bb_z = float(parameters.get("range_bb_z", 2.0))
+        range_rsi = float(parameters.get("range_rsi", 35.0))
+        stop_multiple = float(parameters.get("stop_atr", 2.0))
+        range_stop_multiple = float(parameters.get("range_stop_atr", 0.5))
+        prior_high = d.high.shift(1).rolling(breakout_period, min_periods=breakout_period).max()
+        prior_low = d.low.shift(1).rolling(breakout_period, min_periods=breakout_period).min()
+        trend_long = (d.adx >= trend_adx_min) & (d.close > prior_high)
+        trend_short = (d.adx >= trend_adx_min) & (d.close < prior_low)
+        range_long = (d.adx <= range_adx_max) & (d.bb_z <= -range_bb_z) & (d.rsi <= range_rsi)
+        range_short = (d.adx <= range_adx_max) & (d.bb_z >= range_bb_z) & (d.rsi >= 100.0 - range_rsi)
         long = trend_long | range_long
         short = trend_short | range_short
-        _set_atr_stops(d, long, short, 2.0)
-        d.loc[range_long, "stop"] = d.loc[range_long, "low"] - 0.5 * atr.loc[range_long]
-        d.loc[range_short, "stop"] = d.loc[range_short, "high"] + 0.5 * atr.loc[range_short]
+        _set_atr_stops(d, long, short, stop_multiple)
+        d.loc[range_long, "stop"] = d.loc[range_long, "low"] - range_stop_multiple * atr.loc[range_long]
+        d.loc[range_short, "stop"] = d.loc[range_short, "high"] + range_stop_multiple * atr.loc[range_short]
         d.loc[range_long, "target"] = d.loc[range_long, "bb_mid"]
         d.loc[range_short, "target"] = d.loc[range_short, "bb_mid"]
 
     elif model == "M14":
-        long = (d.adx > 25) & (d.mom14 > 0) & (d.plus_di > 25) & (d.plus_di > d.minus_di)
-        short = (d.adx > 25) & (d.mom14 < 0) & (d.minus_di > 25) & (d.minus_di > d.plus_di)
-        _set_atr_stops(d, long, short, 2.0)
+        adx_min = float(parameters.get("adx_min", 25.0))
+        di_min = float(parameters.get("di_min", 25.0))
+        momentum_lookback = int(parameters.get("momentum_lookback", 14))
+        momentum = d.close - d.close.shift(momentum_lookback)
+        long = (d.adx > adx_min) & (momentum > 0) & (d.plus_di > di_min) & (d.plus_di > d.minus_di)
+        short = (d.adx > adx_min) & (momentum < 0) & (d.minus_di > di_min) & (d.minus_di > d.plus_di)
+        _set_atr_stops(d, long, short, float(parameters.get("stop_atr", 2.0)))
 
     elif model == "M15":
         ao = d.awesome_oscillator
-        ao_cross_up = (ao > 0) & (ao.shift(1) <= 0)
-        ao_cross_down = (ao < 0) & (ao.shift(1) >= 0)
-        long = (d.macd > 0) & ao_cross_up
-        short = (d.macd < 0) & ao_cross_down
-        _set_atr_stops(d, long, short, 2.0)
+        ao_min_atr = float(parameters.get("ao_cross_min_atr", 0.0))
+        macd_min_atr = float(parameters.get("macd_min_atr", 0.0))
+        ao_threshold = ao_min_atr * atr
+        macd_threshold = macd_min_atr * atr
+        ao_cross_up = (ao > ao_threshold) & (ao.shift(1) <= 0)
+        ao_cross_down = (ao < -ao_threshold) & (ao.shift(1) >= 0)
+        long = (d.macd > macd_threshold) & ao_cross_up
+        short = (d.macd < -macd_threshold) & ao_cross_down
+        _set_atr_stops(d, long, short, float(parameters.get("stop_atr", 2.0)))
 
     d["signal"] = d.signal.fillna(0).astype(int)
     return d
