@@ -2,7 +2,7 @@ name: Frozen Eight-Engine Forward Holdout
 
 on:
   schedule:
-    - cron: "0 4 1 * *"
+    - cron: "0 6 2 * *"
   workflow_dispatch:
     inputs:
       end_date:
