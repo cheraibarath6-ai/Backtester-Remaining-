@@ -1,101 +1,23 @@
-name: Independent M6-M11 Full Cost Stress Research
+name: Legacy M6-M11 cost stress disabled
 
 on:
   push:
     branches: [research/funding-notional-audit-v2]
     paths:
       - ".github/workflows/m6-m11-cost-stress.yml"
-      - "crypto_research/cost_stress_run.py"
-      - "crypto_research/aggregate_cost_stress.py"
-      - "tests/test_cost_stress.py"
-      - "tests/test_combinations.py"
-      - "tests/test_walkforward.py"
-      - "crypto_research/backtest.py"
-      - "crypto_research/metrics.py"
-      - "crypto_research/combination_run.py"
-      - "crypto_research/independent_models.py"
-  workflow_dispatch:
-    inputs:
-      start:
-        description: Inclusive UTC start date
-        required: true
-        default: "2021-01-01"
-      end:
-        description: Exclusive UTC end date
-        required: true
-        default: "2026-11-01"
 
 permissions:
   contents: read
 
+# This legacy M6/M11 workflow is intentionally parked. The active research scope
+# is M6, M7, M8, M10, M12, M13, M14 and M15 only.
 concurrency:
   group: independent-m6-m11-cost-stress-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
-  stress:
-    name: Cost stress / ${{ matrix.symbol }}
+  parked:
+    if: false
     runs-on: ubuntu-latest
-    timeout-minutes: 360
-    strategy:
-      fail-fast: false
-      max-parallel: 2
-      matrix:
-        symbol: [BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT, XRPUSDT, ADAUSDT, DOGEUSDT]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: pip
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-      - name: Compile and run regression tests
-        run: python -m compileall -q crypto_research tests && python -m pytest -q
-      - name: Re-execute selected M6/M11 profiles at four cost levels
-        run: >
-          python -m crypto_research.cost_stress_run
-          --start "${{ inputs.start || '2021-01-01' }}"
-          --end "${{ inputs.end || '2026-11-01' }}"
-          --symbol "${{ matrix.symbol }}"
-          --timeframe 4h
-          --out cost_stress_artifacts
-      - name: Upload symbol results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: cost-stress-${{ matrix.symbol }}
-          path: cost_stress_artifacts/
-          if-no-files-found: warn
-          retention-days: 90
-
-  aggregate:
-    name: Aggregate cost stress
-    runs-on: ubuntu-latest
-    needs: stress
-    if: always()
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: pip
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-      - name: Download completed symbol artifacts
-        continue-on-error: true
-        uses: actions/download-artifact@v4
-        with:
-          pattern: cost-stress-*
-          path: input-artifacts
-          merge-multiple: false
-      - name: Aggregate independent scenarios
-        run: python -m crypto_research.aggregate_cost_stress --input input-artifacts --out cost_stress_results
-      - name: Upload combined cost stress report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: independent-m6-m11-cost-stress-results
-          path: cost_stress_results/
-          if-no-files-found: warn
-          retention-days: 90
+      - run: echo "Legacy out-of-scope workflow parked; no backtests executed."
