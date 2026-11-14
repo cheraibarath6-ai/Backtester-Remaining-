@@ -17,12 +17,21 @@ COLS = [
 
 
 def months(start, end):
-    return pd.date_range(
-        pd.Timestamp(start, tz="UTC"),
-        pd.Timestamp(end, tz="UTC"),
-        freq="MS",
-        inclusive="left",
+    """Return every UTC calendar month intersecting [start, end)."""
+    start_ts = pd.Timestamp(start)
+    end_ts = pd.Timestamp(end)
+    start_ts = start_ts.tz_localize("UTC") if start_ts.tzinfo is None else start_ts.tz_convert("UTC")
+    end_ts = end_ts.tz_localize("UTC") if end_ts.tzinfo is None else end_ts.tz_convert("UTC")
+    if end_ts <= start_ts:
+        return pd.DatetimeIndex([], tz="UTC")
+    # Period range includes partial first and last months while respecting the
+    # exclusive end boundary (including the final month only if it intersects).
+    periods = pd.period_range(
+        start=start_ts.tz_localize(None),
+        end=(end_ts - pd.Timedelta(nanoseconds=1)).tz_localize(None),
+        freq="M",
     )
+    return periods.to_timestamp(how="start").tz_localize("UTC")
 
 
 def _checksum_ok(url: str, path: Path) -> bool | None:
@@ -112,15 +121,37 @@ def read_zip(path: Path):
 
 def acquire_klines(symbol, start, end, root=Path("data")):
     parts = []
-    for month in months(start, end):
+    start_ts = pd.Timestamp(start)
+    end_ts = pd.Timestamp(end)
+    start_ts = start_ts.tz_localize("UTC") if start_ts.tzinfo is None else start_ts.tz_convert("UTC")
+    end_ts = end_ts.tz_localize("UTC") if end_ts.tzinfo is None else end_ts.tz_convert("UTC")
+    for month in months(start_ts, end_ts):
         ym = month.strftime("%Y-%m")
         name = f"{symbol}-1m-{ym}.zip"
         url = f"{BASE}/klines/{symbol}/1m/{name}"
         path = get_zip(url, root / "raw" / "klines" / symbol / name, verify_checksum=True)
         if path:
             parts.append(read_zip(path))
+            continue
+
+        # Binance publishes daily archives for an incomplete current month.
+        # Use them only when the corresponding monthly archive is unavailable.
+        month_end = month + pd.offsets.MonthBegin(1)
+        day_start = max(month.normalize(), start_ts.normalize())
+        day_end = min(month_end, end_ts)
+        for day in pd.date_range(day_start, day_end.normalize(), freq="D", inclusive="left"):
+            ymd = day.strftime("%Y-%m-%d")
+            daily_name = f"{symbol}-1m-{ymd}.zip"
+            daily_url = f"{BASE.replace('/monthly', '/daily')}/klines/{symbol}/1m/{daily_name}"
+            daily_path = get_zip(
+                daily_url,
+                root / "raw" / "klines_daily" / symbol / daily_name,
+                verify_checksum=True,
+            )
+            if daily_path:
+                parts.append(read_zip(daily_path))
     if not parts:
-        raise RuntimeError(f"No monthly kline archives found for {symbol}")
+        raise RuntimeError(f"No monthly or daily kline archives found for {symbol}")
 
     data = pd.concat(parts).sort_index()
     duplicate_count = int(data.index.duplicated().sum())
