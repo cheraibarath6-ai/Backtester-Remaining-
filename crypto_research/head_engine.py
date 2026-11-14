@@ -314,8 +314,16 @@ def main():
     source = funding.attrs.get("source", "unknown")
     gaps = funding.index.to_series().diff().dropna() if not funding.empty else pd.Series(dtype="timedelta64[ns]")
     max_gap = float(gaps.max().total_seconds() / 3600) if not gaps.empty else None
-    if funding.empty or source not in OFFICIAL_FUNDING_SOURCES or max_gap is None or max_gap > 8.5:
-        raise RuntimeError(f"Official funding failed closed: source={source}, rows={len(funding)}, max_gap_hours={max_gap}, attrs={dict(funding.attrs)}")
+    first_gap = float((funding.index.min() - raw.index.min()).total_seconds() / 3600) if not funding.empty else None
+    last_gap = float((_utc_end := pd.Timestamp(args.end, tz="UTC") - funding.index.max()).total_seconds() / 3600) if not funding.empty else None
+    if (funding.empty or source not in OFFICIAL_FUNDING_SOURCES or max_gap is None
+            or max_gap > 8.5 or first_gap is None or first_gap < 0 or first_gap > 8.5
+            or last_gap is None or last_gap < 0 or last_gap > 8.5):
+        raise RuntimeError(
+            f"Official funding failed closed: source={source}, rows={len(funding)}, "
+            f"first_gap_hours={first_gap}, max_gap_hours={max_gap}, last_gap_hours={last_gap}, "
+            f"attrs={dict(funding.attrs)}"
+        )
     quality = quality_report(raw, symbol, raw.index.min(), args.end)
     frames = {}
     for model in MODEL_PRIORITY:
@@ -335,7 +343,10 @@ def main():
         "listing_delay_days": round((raw.index.min() - pd.Timestamp(args.start, tz="UTC")).total_seconds() / 86400, 4),
         "fee_bps_per_side": args.fee_bps, "slippage_bps_per_side": args.slippage_bps,
         "funding_source": source, "funding_rows": int(len(funding)),
-        "funding_max_gap_hours": max_gap, "candle_quality": quality,
+        "funding_actual_start": str(funding.index.min()),
+        "funding_actual_end": str(funding.index.max()),
+        "funding_first_gap_hours": first_gap, "funding_max_gap_hours": max_gap,
+        "funding_last_gap_hours": last_gap, "candle_quality": quality,
         "model_trigger_bars": {m: int(frames[m].signal.ne(0).sum()) for m in MODEL_PRIORITY},
         "head_trigger_bars": int(combined.signal.ne(0).sum()),
         "conflict_bars": int(combined.same_bar_conflict.sum()),
