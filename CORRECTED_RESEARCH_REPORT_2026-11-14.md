@@ -377,3 +377,20 @@ The corrected reruns are now active on that commit:
 Two duplicate starts created during the push were cancelled; the run IDs above are the current surviving attempts. Earlier M11 artifacts are not used for selection. M6 and other price-only model results from the previous completed screen remain valid for their own streams, but the independent screen is being rerun so the combined report has a consistent current revision.
 
 No corrected M11 performance result is available yet. The new M11 results must use Binance Vision `sum_open_interest` contract/base quantity, not `sum_open_interest_value` quote notional. The November forward holdout remains unscored until official funding data is available. No model is approved for live trading; M3 remains untouched.
+
+
+## Workflow de-duplication and current surviving runs — 14 November 2026, 02:33 UTC
+
+A workflow audit found that the cost-stress, combinations, and funding-test workflows were listening to both `push` and `pull_request` on the same PR branch while using a shared concurrency key. Each branch update therefore created two runs, and the later PR event could cancel the push run's matrix jobs. I removed the duplicate `pull_request` triggers from those three workflows; the branch's push-triggered runs remain the source of truth. This prevents redundant expensive jobs and partial artifacts caused by event cancellation.
+
+The workflow-only fix is commit `5790e327961039ceae2a34556127e7e87071221a`. The latest full test run on that commit, [43546772358](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43546772358), succeeded; the inspected log confirms **79 passed in 1.41s**.
+
+Current surviving corrected-research runs:
+
+- [Independent Core Engine Discovery — 43546549065](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43546549065), on code commit `83bc7daa`: BTC/ETH jobs running; five symbols queued.
+- [M6/M11 sensitivity — 43546549082](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43546549082), on code commit `83bc7daa`: BTC/ETH jobs running; five symbols queued.
+- [M6/M11 full cost stress — 43546772339](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43546772339), push-triggered on `5790e327`: pending runner allocation.
+- [M6/M11 combinations and downstream walk-forward — 43546772391](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43546772391), push-triggered on `5790e327`: pending runner allocation.
+- [Funding/accounting tests — 43546772358](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43546772358): passed.
+
+The duplicate PR-event attempts from the earlier commits are superseded and must not be used as research artifacts. No corrected M11 performance results are available yet; all prior M11 figures remain invalid for selection. M6 and other price-only results remain unaffected by the M11 OI-field correction. No model is approved for live trading.
