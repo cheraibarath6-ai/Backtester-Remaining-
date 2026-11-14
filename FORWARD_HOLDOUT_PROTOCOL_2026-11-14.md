@@ -37,7 +37,7 @@ The initial window is likely to have a small trade sample. Do not claim statisti
 
 ## Workflow status
 
-The workflow definition is committed on the research branch as .github/workflows/eight-engine-forward-holdout.yml. GitHub scheduled workflows run only from the repository's default branch, so this scheduled job will not execute while PR #2 remains an unmerged draft. The workflow is ready for activation after an explicit merge decision; no merge was made. Manual dispatch also requires the workflow to be available from the default branch.
+The workflow definition is committed on the research branch as .github/workflows/eight-engine-forward-holdout.yml and is scheduled for the second day of each month at 06:00 UTC, allowing daily archive checksums to finalize. GitHub scheduled workflows run only from the repository's default branch, so this scheduled job will not execute while PR #2 remains an unmerged draft. The workflow is ready for activation after an explicit merge decision; no merge was made. Manual dispatch also requires the workflow to be available from the default branch.
 
 ## Licensing
 
