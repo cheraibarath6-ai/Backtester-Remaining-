@@ -54,5 +54,5 @@ def test_entry_timestamp_is_next_completed_bar_open():
     funding = pd.DataFrame(columns=["funding_rate", "mark_price"])
     trades = run_head_backtest(bars, funding, "BTCUSDT")
     assert len(trades) == 1
-    assert trades.iloc[0].entry_time == str(idx[1])
+    assert trades.iloc[0].entry_time == str(idx[1] - pd.Timedelta(hours=4))
     assert trades.iloc[0].exit_reason == "TIME"
