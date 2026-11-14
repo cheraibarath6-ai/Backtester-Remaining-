@@ -7,14 +7,24 @@ on:
       - research/funding-notional-audit-v2
     paths:
       - .github/workflows/head-batch2-resume.yml
+  workflow_dispatch:
+    inputs:
+      start:
+        description: Inclusive UTC scoring-window start
+        required: true
+        type: string
+      end:
+        description: Exclusive UTC scoring-window end
+        required: true
+        type: string
 
 permissions:
   contents: read
   actions: write
 
 env:
-  BATCH_START: ${{ github.event.head_commit.message == 'Run HEAD batch 1' && '2021-11-14' || github.event.head_commit.message == 'Run HEAD batch 2' && '2022-01-01' || github.event.head_commit.message == 'Run HEAD batch 3' && '2023-01-01' || github.event.head_commit.message == 'Run HEAD batch 4' && '2024-01-01' || github.event.head_commit.message == 'Run HEAD batch 5' && '2025-01-01' || github.event.head_commit.message == 'Run HEAD batch 6' && '2026-01-01' || github.event.head_commit.message == 'Aggregate HEAD batch 2' && '2022-01-01' }}
-  BATCH_END: ${{ github.event.head_commit.message == 'Run HEAD batch 1' && '2022-01-01' || github.event.head_commit.message == 'Run HEAD batch 2' && '2023-01-01' || github.event.head_commit.message == 'Run HEAD batch 3' && '2024-01-01' || github.event.head_commit.message == 'Run HEAD batch 4' && '2025-01-01' || github.event.head_commit.message == 'Run HEAD batch 5' && '2026-01-01' || github.event.head_commit.message == 'Run HEAD batch 6' && '2026-11-14' || github.event.head_commit.message == 'Aggregate HEAD batch 2' && '2023-01-01' }}
+  BATCH_START: ${{ inputs.start || (github.event.head_commit.message == 'Run HEAD batch 1' && '2021-11-14') || (github.event.head_commit.message == 'Run HEAD batch 2' && '2022-01-01') || (github.event.head_commit.message == 'Run HEAD batch 3' && '2023-01-01') || (github.event.head_commit.message == 'Run HEAD batch 4' && '2024-01-01') || (github.event.head_commit.message == 'Run HEAD batch 5' && '2025-01-01') || (github.event.head_commit.message == 'Run HEAD batch 6' && '2026-01-01') || (github.event.head_commit.message == 'Aggregate HEAD batch 2' && '2022-01-01') }}
+  BATCH_END: ${{ inputs.end || (github.event.head_commit.message == 'Run HEAD batch 1' && '2022-01-01') || (github.event.head_commit.message == 'Run HEAD batch 2' && '2023-01-01') || (github.event.head_commit.message == 'Run HEAD batch 3' && '2024-01-01') || (github.event.head_commit.message == 'Run HEAD batch 4' && '2025-01-01') || (github.event.head_commit.message == 'Run HEAD batch 5' && '2026-01-01') || (github.event.head_commit.message == 'Run HEAD batch 6' && '2026-11-14') || (github.event.head_commit.message == 'Aggregate HEAD batch 2' && '2023-01-01') }}
 
 concurrency:
   group: head-sequential-${{ github.ref }}-${{ github.event.head_commit.message }}
@@ -22,7 +32,7 @@ concurrency:
 
 jobs:
   backtest:
-    if: github.event.head_commit.message == 'Run HEAD batch 1' || github.event.head_commit.message == 'Run HEAD batch 2' || github.event.head_commit.message == 'Run HEAD batch 3' || github.event.head_commit.message == 'Run HEAD batch 4' || github.event.head_commit.message == 'Run HEAD batch 5' || github.event.head_commit.message == 'Run HEAD batch 6'
+    if: github.event_name == 'workflow_dispatch' || github.event.head_commit.message == 'Run HEAD batch 1' || github.event.head_commit.message == 'Run HEAD batch 2' || github.event.head_commit.message == 'Run HEAD batch 3' || github.event.head_commit.message == 'Run HEAD batch 4' || github.event.head_commit.message == 'Run HEAD batch 5' || github.event.head_commit.message == 'Run HEAD batch 6'
     name: HEAD / ${{ matrix.symbol }} / 4h
     runs-on: ubuntu-latest
     timeout-minutes: 360
@@ -68,7 +78,7 @@ jobs:
     name: Verify cumulative HEAD window
     runs-on: ubuntu-latest
     needs: backtest
-    if: always() && (github.event.head_commit.message == 'Run HEAD batch 1' || github.event.head_commit.message == 'Run HEAD batch 2' || github.event.head_commit.message == 'Run HEAD batch 3' || github.event.head_commit.message == 'Run HEAD batch 4' || github.event.head_commit.message == 'Run HEAD batch 5' || github.event.head_commit.message == 'Run HEAD batch 6' || github.event.head_commit.message == 'Aggregate HEAD batch 2')
+    if: always() && (github.event_name == 'workflow_dispatch' || github.event.head_commit.message == 'Run HEAD batch 1' || github.event.head_commit.message == 'Run HEAD batch 2' || github.event.head_commit.message == 'Run HEAD batch 3' || github.event.head_commit.message == 'Run HEAD batch 4' || github.event.head_commit.message == 'Run HEAD batch 5' || github.event.head_commit.message == 'Run HEAD batch 6' || github.event.head_commit.message == 'Aggregate HEAD batch 2')
     steps:
       - uses: actions/checkout@v4
         with:
@@ -249,3 +259,54 @@ jobs:
           path: head_results/
           if-no-files-found: warn
           retention-days: 90
+
+  continue:
+    name: Dispatch next annual HEAD batch after successful aggregation
+    runs-on: ubuntu-latest
+    needs: aggregate
+    if: success() && (env.BATCH_END == '2025-01-01' || env.BATCH_END == '2026-01-01')
+    steps:
+      - name: Dispatch the next batch only after the cumulative report is uploaded
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPOSITORY: ${{ github.repository }}
+          GH_BRANCH: ${{ github.ref_name }}
+          BATCH_END: ${{ env.BATCH_END }}
+        run: |
+          python - <<'PY'
+          import os
+          import requests
+
+          next_batch = {
+              "2025-01-01": ("2025-01-01", "2026-01-01"),
+              "2026-01-01": ("2026-01-01", "2026-11-14"),
+          }.get(os.environ["BATCH_END"])
+          if next_batch is None:
+              raise SystemExit("No subsequent batch is defined")
+
+          repo = os.environ["GH_REPOSITORY"]
+          branch = os.environ["GH_BRANCH"]
+          token = os.environ["GH_TOKEN"]
+          url = (
+              f"https://api.github.com/repos/{repo}/actions/workflows/"
+              "head-batch2-resume.yml/dispatches"
+          )
+          response = requests.post(
+              url,
+              headers={
+                  "Accept": "application/vnd.github+json",
+                  "Authorization": f"Bearer {token}",
+                  "X-GitHub-Api-Version": "2022-11-28",
+              },
+              json={
+                  "ref": branch,
+                  "inputs": {"start": next_batch[0], "end": next_batch[1]},
+              },
+              timeout=60,
+          )
+          response.raise_for_status()
+          print(
+              f"Dispatched next HEAD batch {next_batch[0]}..{next_batch[1]} "
+              "after successful cumulative aggregation"
+          )
+          PY
