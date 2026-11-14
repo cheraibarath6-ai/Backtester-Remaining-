@@ -306,10 +306,26 @@ def main():
         funding_max_gaps = []
         funding_first_gaps = []
         funding_last_gaps = []
+        candle_sources = set()
+        missing_minutes = 0
+        missing_interval_count = 0
+        missing_intervals = []
         conflict_bars = 0
         multi_trigger_bars = 0
         head_trigger_bars = 0
         for row in group:
+            candle_quality = row.get("candle_quality") or {}
+            candle_source = candle_quality.get("source")
+            if candle_source:
+                candle_sources.add(str(candle_source))
+            missing_minutes += int(candle_quality.get("missing_minutes") or 0)
+            missing_interval_count += int(candle_quality.get("missing_interval_count") or 0)
+            for interval in candle_quality.get("missing_intervals") or []:
+                missing_intervals.append({
+                    "batch_start": row.get("start_inclusive"),
+                    "batch_end": row.get("end_exclusive"),
+                    **interval,
+                })
             for model, count in (row.get("model_trigger_bars") or {}).items():
                 if model in model_counts:
                     model_counts[model] += int(count or 0)
@@ -353,8 +369,14 @@ def main():
                 int(valid.loc[valid.symbol == symbol, "same_bar_conflict"].sum())
                 if not valid.empty and "same_bar_conflict" in valid else 0
             ),
+            "candle_source": ";".join(sorted(candle_sources)) if candle_sources else "unknown",
+            "missing_minutes": missing_minutes,
+            "missing_interval_count": missing_interval_count,
+            "missing_intervals": missing_intervals,
             "funding_source": funding_source,
             "funding_rows": funding_rows,
+            "funding_actual_start": min(funding_starts) if funding_starts else None,
+            "funding_actual_end": max(funding_ends) if funding_ends else None,
             "funding_max_gap_hours": max(funding_max_gaps) if funding_max_gaps else None,
             "data_status": data_status,
             **coverage,
@@ -363,6 +385,10 @@ def main():
             "symbol": symbol,
             "data_status": data_status,
             **coverage,
+            "candle_source": ";".join(sorted(candle_sources)) if candle_sources else "unknown",
+            "missing_minutes": missing_minutes,
+            "missing_interval_count": missing_interval_count,
+            "missing_intervals_json": json.dumps(missing_intervals, separators=(",", ":")),
             "funding_source": funding_source,
             "funding_rows": funding_rows,
             "funding_actual_start": min(funding_starts) if funding_starts else None,
@@ -382,7 +408,7 @@ def main():
     data_quality = pd.DataFrame(quality_rows)
     data_quality.to_csv(out / "head_data_quality.csv", index=False)
 
-    overall = _aggregate_metrics(valid)
+    overall = _aggregate_metrics(all_trades)
     overall.update({
         "same_bar_conflict_trades": (
             int(valid.same_bar_conflict.sum())
@@ -467,8 +493,40 @@ def main():
         )
     lines += [
         "",
+        "## Official candle and funding coverage",
+        "",
+        "| Symbol | Candle source | Candle coverage | Funding source | Funding rows | Funding actual range | Funding max gap (h) | DATA_GAP | END_OF_SAMPLE |",
+        "|---|---|---:|---|---:|---|---:|---:|---:|",
+    ]
+    for row in per_symbol_rows:
+        funding_range = (
+            f"{row['funding_actual_start']} to {row['funding_actual_end']}"
+            if row.get("funding_actual_start") and row.get("funding_actual_end")
+            else "No official funding rows"
+        )
+        lines.append(
+            f"| {row['symbol']} | {row['candle_source']} | "
+            f"{row['requested_window_coverage_pct']}% | {row['funding_source']} | "
+            f"{row['funding_rows']} | {funding_range} | "
+            f"{row['funding_max_gap_hours']} | {row['data_gap_trades']} | "
+            f"{row['end_of_sample_trades']} |"
+        )
+    lines += ["", "## Official candle gaps"]
+    gap_lines = []
+    for row in per_symbol_rows:
+        for gap in row.get("missing_intervals", []):
+            gap_lines.append(
+                f"- {row['symbol']}: {gap['start']} to {gap['end']} "
+                f"({gap['minutes']} missing minutes; batch "
+                f"{gap['batch_start']} to {gap['batch_end']})"
+            )
+    lines += gap_lines if gap_lines else ["- No missing 1-minute candle intervals in the requested window."]
+    lines += [
+        "",
         "## Combined trade-stream diagnostic (not portfolio return)",
         f"- Valid trades: {overall.get('trades')}",
+        f"- DATA_GAP audit rows: {overall.get('data_gap_trades')}",
+        f"- END_OF_SAMPLE audit rows: {overall.get('end_of_sample_trades')}",
         f"- Wins / losses: {overall.get('wins')} / {overall.get('losses')}",
         f"- Win rate: {overall.get('win_rate_pct')}%",
         f"- Profit factor: {overall.get('profit_factor')}",
