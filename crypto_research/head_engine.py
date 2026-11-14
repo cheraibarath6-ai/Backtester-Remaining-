@@ -16,7 +16,7 @@ import pandas as pd
 
 from .data import acquire_klines, quality_report
 from .funding_patch import acquire_funding
-from .independent_models import make_independent_signals
+from .independent_models import make_independent_signals, prepare_bars
 from .backtest import summarize
 
 START_DEFAULT = "2021-11-14"
@@ -378,6 +378,45 @@ def main():
     )
 
     raw = acquire_klines(symbol, history_start, end_ts)
+    if not raw.empty and prepare_bars(raw, TIMEFRAME).empty:
+        score_raw = raw.loc[(raw.index >= score_start) & (raw.index < end_ts)]
+        quality = quality_report(score_raw, symbol, score_start, end_ts)
+        trades = pd.DataFrame(columns=TRADE_COLUMNS)
+        summary = summarize(trades)
+        summary.update({
+            "status": "NO_COMPLETE_4H_BARS",
+            "symbol": symbol, "model": "HEAD", "timeframe": TIMEFRAME,
+            "start_inclusive": args.start, "end_exclusive": args.end,
+            "history_start": str(history_start), "warmup_bars": args.warmup_bars,
+            "actual_candle_start": str(score_raw.index.min()) if not score_raw.empty else None,
+            "actual_candle_end_exclusive": (
+                str(score_raw.index.max() + pd.Timedelta(minutes=1))
+                if not score_raw.empty else None
+            ),
+            "listing_delay_days": (
+                round(max(0.0, (score_raw.index.min() - _utc(START_DEFAULT)).total_seconds() / 86400), 4)
+                if not score_raw.empty else None
+            ),
+            "fee_bps_per_side": args.fee_bps,
+            "slippage_bps_per_side": args.slippage_bps,
+            "funding_source": "not_applicable_no_complete_4h_bars",
+            "funding_rows": 0, "funding_actual_start": None,
+            "funding_actual_end": None, "funding_first_gap_hours": None,
+            "funding_max_gap_hours": None, "funding_last_gap_hours": None,
+            "candle_quality": quality,
+            "model_trigger_bars": {m: 0 for m in MODEL_PRIORITY},
+            "head_trigger_bars": 0, "conflict_bars": 0,
+            "multi_trigger_bars": 0, "valid_trade_sources": {},
+        })
+        audit = pd.DataFrame(columns=TRIGGER_COLUMNS)
+        audit.index = pd.DatetimeIndex([], tz="UTC", name="bar_close_time")
+        (out / f"{symbol}_summary.json").write_text(
+            json.dumps(summary, indent=2, default=str)
+        )
+        trades.to_csv(out / f"{symbol}_trades.csv", index=False)
+        audit.to_csv(out / f"{symbol}_trigger_audit.csv")
+        print(f"HEAD NO COMPLETE 4H BARS {symbol} {args.start}..{args.end}", flush=True)
+        return
     if raw.empty:
         quality = quality_report(raw, symbol, score_start, end_ts)
         trades = pd.DataFrame(columns=TRADE_COLUMNS)
