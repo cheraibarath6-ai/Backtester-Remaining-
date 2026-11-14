@@ -1,0 +1,102 @@
+name: Independent Top-Five Multi-Factor Replicate Research
+
+on:
+  push:
+    branches: [research/funding-notional-audit-v2]
+    paths:
+      - "crypto_research/top5_replica_run.py"
+      - "crypto_research/aggregate_top5_replica.py"
+      - "tests/test_top5_replica.py"
+      - ".github/workflows/top5-multifactor-replicas.yml"
+  workflow_dispatch:
+    inputs:
+      start:
+        description: Inclusive UTC start date
+        required: true
+        default: "2021-01-01"
+      end:
+        description: Exclusive UTC end date
+        required: true
+        default: "2026-11-01"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: top-five-multifactor-replicas-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  replicate:
+    name: Top-five replicate / ${{ matrix.symbol }} / 4h
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        symbol: [BTCUSDT, ETHUSDT, BNBUSDT, ADAUSDT, DOGEUSDT, SOLUSDT, XRPUSDT]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Compile scoped runner and run scoped tests
+        run: |
+          python -m compileall -q crypto_research/top5_replica_run.py crypto_research/aggregate_top5_replica.py
+          python -m pytest -q tests/test_top5_replica.py tests/test_improvement_run.py
+      - name: Run five independent multi-factor replicates
+        run: >
+          python -m crypto_research.top5_replica_run
+          --start "${{ inputs.start || '2021-01-01' }}"
+          --end "${{ inputs.end || '2026-11-01' }}"
+          --symbol "${{ matrix.symbol }}"
+          --models M6 M8 M12 M14 M15
+          --timeframes 4h
+          --fee-bps 5
+          --slippage-bps 2
+          --out top5_replica_artifacts
+      - name: Upload symbol replica results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: top5-replica-${{ matrix.symbol }}
+          path: top5_replica_artifacts/
+          if-no-files-found: warn
+          retention-days: 90
+
+  aggregate:
+    name: Aggregate top-five independent replicates
+    runs-on: ubuntu-latest
+    needs: replicate
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Download symbol artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: top5-replica-*
+          path: input-artifacts
+          merge-multiple: false
+      - name: Aggregate per-symbol and yearwise results
+        run: >
+          python -m crypto_research.aggregate_top5_replica
+          --input input-artifacts
+          --out top5_replica_results
+      - name: Upload combined replica report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: top5-multifactor-replica-results
+          path: top5_replica_results/
+          if-no-files-found: warn
+          retention-days: 90
