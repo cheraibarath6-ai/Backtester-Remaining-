@@ -218,3 +218,85 @@ The independent screen, M6/M11 sensitivity and combination outputs now use `retr
 - [Independent screen 43525314007](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43525314007), [M6/M11 sensitivity 43525314000](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43525314000), [M6/M11 combinations/walk-forward 43525320939](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43525320939), and [full OHLC cost stress 43525320823](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43525320823) are the current corrected run set. Their result artifacts must be inspected after completion; prior runs with the less conservative funding-boundary rule are superseded for final selection.
 
 No model is approved for live trading. M3 remains untouched.
+
+
+## Verified baseline-inclusive cost stress and combination reruns — 14 November 2026, 00:35 UTC
+
+This section supersedes the earlier cost-stress status above. The new runs are on the same research code revision as the corrected cohort logic; the one commit between the earlier screen SHA and the current branch head changed only this report.
+
+### Latest verified workflows and artifacts
+
+- [Funding/accounting regression tests — run 43525481806](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43525481806): completed successfully. The inspected job log confirms **77 passed in 1.10s**.
+- [Baseline-inclusive full OHLC cost stress — run 43525481794](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43525481794): all seven symbol jobs and the aggregate job completed successfully. [Aggregate artifact 14087983532](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43525481794/artifacts/14087983532).
+- [Within-model combinations plus expanding walk-forward — run 43525482018](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43525482018): all seven M6/M11 combination symbol jobs and the combination aggregator completed successfully. [Combination aggregate artifact 14089187276](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43525482018/artifacts/14089187276). The separate walk-forward matrix has started: BTC and ETH were in progress, and the other five symbols were queued at the last inspection. No walk-forward performance result is claimed yet.
+- [M6/M11 one-factor sensitivity — run 43525314000](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43525314000): all seven symbols and aggregation completed. [Aggregate artifact 14088008286](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43525314000/artifacts/14088008286).
+- [Independent full screen — run 43525314007](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43525314007): six symbol jobs completed; DOGE was still executing at the last inspection, so its final aggregate is pending. The only commit between this run's code SHA and the current branch head changed this report, not research code.
+
+### Baseline-inclusive full OHLC cost stress
+
+The completed stress run re-executed each selected profile's OHLC path at four per-side fee/slippage levels: **5/2, 7.5/3, 10/5 and 15/10 bps**. It covered 13 independent profiles (eight M6 and five M11), seven symbols, and 4h bars. It produced 364 symbol/profile/cost rows, 52 cross-symbol profile/cost summaries and 74,779 trade-ledger records. The ledger retains 28 DATA_GAP and 44 END_OF_SAMPLE records; both are excluded from performance metrics.
+
+The table compares the 5/2 base and 15/10 severe-cost cases. PF columns are net-bps PF and R-based PF. Net-R and the 1%-per-R fixed-initial-risk arithmetic are shown as cross-symbol trade-stream sums, not portfolio returns. Drawdown is the worst individual-symbol drawdown at 1% fixed risk.
+
+| Independent profile | Trades base / severe | PF-bps base / severe | PF-R base / severe | Net-R base / severe | Win % base / severe | Worst symbol DD base / severe | Avg hold |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| M6 BASELINE_H24 | 2,373 / 2,370 | 1.0948 / 0.9265 | 1.1382 / 0.9188 | +98.864 / -64.559 | 45.85 / 41.65 | -11.33 / -29.22 | 22.1h |
+| M6 HOLD_48H | 2,107 / 2,101 | 1.1889 / 1.0428 | 1.2098 / 1.0283 | +166.586 / +24.376 | 45.56 / 42.79 | -11.87 / -27.10 | 38.5h |
+| M6 RR3_H24 | 2,314 / 2,312 | 1.1725 / 0.9912 | 1.1823 / 0.9559 | +125.625 / -33.811 | 46.20 / 41.91 | -11.52 / -26.18 | 22.5h |
+| M6 STOP2_H24 | 2,466 / 2,462 | 1.0791 / 0.9141 | 1.1273 / 0.9133 | +116.236 / -87.888 | 44.77 / 40.66 | -12.94 / -36.92 | 20.6h |
+| M6 VOLUME12_H24 | 2,264 / 2,261 | 1.0990 / 0.9274 | 1.1505 / 0.9259 | +102.083 / -55.929 | 45.72 / 41.49 | -11.20 / -30.56 | 22.1h |
+| M6 D100_RR3_H168 | 1,115 / 1,111 | 1.3749 / 1.2521 | 1.3985 / 1.2468 | +243.696 / +159.790 | 41.35 / 40.32 | -11.10 / -17.89 | 92.5h |
+| M6 D100_STOP2_H168 | 1,447 / 1,435 | 1.1813 / 1.0835 | 1.2387 / 1.1049 | +202.833 / +94.241 | 41.53 / 40.84 | -16.79 / -23.57 | 56.5h |
+| M6 D100_VOL12_RR3_H168 | 1,093 / 1,088 | 1.3777 / 1.2625 | 1.4107 / 1.2623 | +246.455 / +166.194 | 41.45 / 40.53 | -11.35 / -17.29 | 92.0h |
+| M11 BASELINE_H24 | 669 / 668 | 1.2640 / 0.9361 | 1.2325 / 0.8801 | +48.510 / -29.603 | 49.03 / 42.37 | -12.40 / -20.31 | 21.6h |
+| M11 OI05_PRICE025_H36 | 760 / 758 | 1.2537 / 0.9642 | 1.2375 / 0.9245 | +66.016 / -24.288 | 46.84 / 41.69 | -10.98 / -22.22 | 29.6h |
+| M11 OI05_PRICE025_RR3_H48 | 721 / 720 | 1.2605 / 1.0042 | 1.2466 / 0.9703 | +75.402 / -10.334 | 44.11 / 40.97 | -14.00 / -24.36 | 38.5h |
+| M11 OI05_PRICE025_RR3_H72 | 686 / 685 | 1.2389 / 1.0306 | 1.2455 / 1.0117 | +85.986 / +4.574 | 41.98 / 38.83 | -12.41 / -23.41 | 50.8h |
+| M11 OI05_RR3_H48 | 681 / 680 | 1.2605 / 1.0053 | 1.2624 / 0.9842 | +75.073 / -5.139 | 44.05 / 41.03 | -15.21 / -23.06 | 38.6h |
+
+The severe-cost aggregate alone is not a selection test. The entry-cohort results below show why the apparently strong full-period profiles remain unproven.
+
+### Severe-cost chronological entry cohorts
+
+Cohorts are assigned by entry timestamp, require exit before the exclusive cohort end, and exclude DATA_GAP and END_OF_SAMPLE. Development is 2021–2024; 2025 is the parameter-validation period; 2026 is retrospective audit evidence only. PF values are aggregated from the valid trade ledger, not averaged from symbol PFs.
+
+| Profile | Dev trades / net-R | 2025 trades | 2025 PF-bps / PF-R / net-R | 2026 trades / net-R |
+|---|---:|---:|---:|---:|
+| M6 BASELINE_H24 | 1,584 / -23.26 | 427 | 0.863 / 0.944 / -7.89 | 359 / -33.41 |
+| M6 HOLD_48H | 1,418 / +49.80 | 364 | 0.950 / 1.037 / +5.68 | 319 / -31.11 |
+| M6 RR3_H24 | 1,545 / -1.32 | 417 | 0.936 / 0.988 / -1.67 | 350 / -30.81 |
+| M6 STOP2_H24 | 1,643 / -39.32 | 444 | 0.892 / 0.991 / -1.66 | 375 / -46.92 |
+| M6 VOLUME12_H24 | 1,514 / -22.93 | 407 | 0.868 / 0.953 / -6.29 | 340 / -26.71 |
+| M6 D100_RR3_H168 | 765 / +142.70 | 189 | 0.812 / 0.935 / -7.71 | 157 / +24.80 |
+| M6 D100_STOP2_H168 | 986 / +84.57 | 243 | 0.848 / 0.955 / -7.28 | 206 / +16.95 |
+| M6 D100_VOL12_RR3_H168 | 749 / +143.65 | 187 | 0.822 / 0.953 / -5.47 | 152 / +28.02 |
+| M11 BASELINE_H24 | 313 / -2.43 | 157 | 0.908 / 0.840 / -9.02 | 198 / -18.16 |
+| M11 OI05_PRICE025_H36 | 364 / -2.39 | 170 | 1.068 / 1.054 / +3.73 | 224 / -25.63 |
+| M11 OI05_PRICE025_RR3_H48 | 346 / +13.04 | 162 | 1.012 / 0.967 / -2.55 | 212 / -20.82 |
+| M11 OI05_PRICE025_RR3_H72 | 333 / +30.25 | 153 | 1.046 / 1.025 / +2.23 | 199 / -27.90 |
+| M11 OI05_RR3_H48 | 321 / +12.55 | 158 | 1.002 / 0.967 / -2.51 | 201 / -15.18 |
+
+Interpretation:
+- M6's 168h variants retain positive full-period severe-cost net-R because development and 2026 retrospective gains are large, but each fails the 2025 severe-cost PF-bps and PF-R validation. They are not selected.
+- M6 HOLD_48H is the best of the added 48h anchors in development and 2025 net-R, but 2025 PF-bps is below 1 and its 2026 retrospective result is sharply negative.
+- M11 H36 and H72 are the only listed M11 severe-cost profiles with positive 2025 net-R and both PFs above 1. Their 2026 retrospective results are strongly negative; H36 development is also below 1 PF. Neither is robust.
+- M11 remains open-interest-only. No liquidation-event proxy or unlicensed liquidation feed was introduced.
+
+### Combination and sensitivity findings
+
+The completed M6/M11 combination artifact contains 238 symbol/profile/timeframe result rows, 43,099 trade-ledger records, 21 DATA_GAP records and 54 END_OF_SAMPLE records. The strict development-plus-2025 positive-candidate file contains **25 rows, all M6; no M11 candidate passed that per-symbol filter**. The 4h M6 HOLD_48H candidate passed on four symbols (not all seven), with 208 validation trades and +39.182 aggregate symbol-stream net-R at base costs; its 2026 retrospective sum is only +0.656R. The candidate is not approved, especially given its severe-cost deterioration above.
+
+The completed one-factor sensitivity artifact contains 406 result rows, 228,753 ledger records, 57 DATA_GAP exits and 79 END_OF_SAMPLE records. Its 37 development-plus-2025 positive candidate rows comprise 34 M6 and three M11 candidates across timeframes; the strongest 4h M6 one-factor lead is HOLD_48H across four symbols. The M11 4h sensitivity candidate passed on only one symbol. These are screening results, not holdout validation.
+
+### Data quality and remaining validation
+
+The combination artifact confirms:
+- BTC, ETH, BNB, ADA and DOGE have 100% 1m candle coverage.
+- SOL and XRP each retain 7,200 missing minutes across two intervals (99.7653% coverage); the executor's DATA_GAP invalidation remains active.
+- Funding is from official Binance Vision USD-M monthly archives; the maximum observed settlement gap is approximately eight hours and no archive months are missing in this historical dataset.
+- BTC OI coverage is 99.9019%; the other six symbols are approximately 84.3%, with their available OI history beginning 1 December 2021.
+- The forward November data collection remains unscored because verified official funding data was unavailable; the forward runner correctly failed closed rather than assuming zero funding.
+
+The walk-forward jobs in run 43525482018 are still running/queued and have not produced a verified aggregate artifact. The full independent screen run 43525314007 also still awaits the DOGE symbol job and final aggregate. The 2026 results remain retrospective, not an untouched holdout. No model is approved for live trading.
+
+PR #2 remains open and in draft. The current PR comparison contains 34 files and no M3 path; M3 remains untouched.
