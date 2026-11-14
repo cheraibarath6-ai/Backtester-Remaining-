@@ -53,7 +53,8 @@ def _summary(frame: pd.DataFrame, keys: list[str]) -> pd.DataFrame:
         gross_move = pd.to_numeric(valid.gross_price_move_bps, errors="coerce").fillna(0.0)
         gross_positive = float(gross_move.clip(lower=0.0).sum())
         holding = pd.to_numeric(valid.holding_minutes, errors="coerce")
-        complete = valid.loc[valid.excursion_complete.astype(bool)] if "excursion_complete" in valid else valid.iloc[0:0]
+        complete_mask = valid["excursion_complete"].astype(str).str.lower().eq("true") if "excursion_complete" in valid else pd.Series(False, index=valid.index)
+        complete = valid.loc[complete_mask]
         dd = [
             _drawdown_r(group)
             for _, group in valid.groupby("symbol")
