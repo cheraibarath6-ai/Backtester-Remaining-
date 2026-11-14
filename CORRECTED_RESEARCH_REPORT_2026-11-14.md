@@ -300,3 +300,53 @@ The combination artifact confirms:
 The walk-forward jobs in run 43525482018 are still running/queued and have not produced a verified aggregate artifact. The full independent screen run 43525314007 also still awaits the DOGE symbol job and final aggregate. The 2026 results remain retrospective, not an untouched holdout. No model is approved for live trading.
 
 PR #2 remains open and in draft. The current PR comparison contains 34 files and no M3 path; M3 remains untouched.
+
+
+## Latest-head verification — 14 November 2026, 02:25 UTC
+
+This section supersedes the older workflow-status notes above. The current branch head at this check is `3883267657897c9cded7b17b1d109a175890918b`. Comparing it with the code SHA used by the completed independent screen/sensitivity shows that the two intervening commits changed only this report; no research code changed after those seven-symbol results.
+
+### Verified current workflows
+
+- [Funding/accounting regression tests — run 43535470971](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43535470971): success. The actual test log confirms **77 passed in 0.93s**.
+- [Baseline-inclusive full OHLC cost stress — run 43535470919](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43535470919): all seven symbol jobs and the aggregate job succeeded. [Latest aggregate artifact 14092771731](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43535470919/artifacts/14092771731). It contains 364 symbol/profile/cost rows, 74,779 ledger rows, 28 DATA_GAP and 44 END_OF_SAMPLE records; the latter two classes remain in audit ledgers and are excluded from performance statistics. The four cost scenarios and 13 independent M6/M11 profiles reproduce the baseline-inclusive results already tabulated above.
+- [M6/M11 combinations and expanding walk-forward — run 43535470944](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43535470944): all seven combination symbol jobs and the combination aggregate succeeded. [Latest combination aggregate artifact 14092662142](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43535470944/artifacts/14092662142). It contains 238 result rows, 43,099 ledger rows, 21 DATA_GAP and 54 END_OF_SAMPLE records. The strict development-plus-2025 candidate file has 25 rows, all M6; no M11 profile passed that per-symbol filter. M6 HOLD_48H passed on four symbols, not seven; its 208 validation trades total +39.182R across symbol streams at base costs, while its 2026 retrospective sum is only +0.656R. Cross-symbol sums are not portfolio returns.
+- [Independent full screen — run 43525314007](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43525314007): all seven symbol jobs and the aggregate succeeded. [Artifact 14088604613](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43525314007/artifacts/14088604613).
+- [M6/M11 one-factor sensitivity — run 43525314000](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43525314000): all seven symbol jobs and the aggregate succeeded. [Artifact 14088008286](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43525314000/artifacts/14088008286).
+
+### Expanding walk-forward: partial verified results only
+
+The walk-forward matrix is part of run 43535470944. At this check, BTC and ETH were completed, BNB and SOL were in progress, and ADA, XRP and DOGE were queued. The aggregate walk-forward job has not completed; therefore the two-symbol results below are partial diagnostics, not a seven-symbol conclusion.
+
+For each symbol/model/year, the runner selected a parameter profile using only that same model's prior completed training trades (net-R primary rank, R-PF tie-breaker), then started the test year flat. M6 and M11 were selected and scored independently; there is no cross-model input.
+
+| Symbol | Model | Test year | Selected profile | Test trades | PF-bps | PF-R | Net-R | Avg hold |
+|---|---|---:|---|---:|---:|---:|---:|---:|
+| BTCUSDT | M6 | 2023 | D100_H168 | 34 | 0.9943 | 1.1271 | +2.330 | 77.1h |
+| BTCUSDT | M6 | 2024 | D100_STOP2_H168 | 42 | 0.9822 | 1.0996 | +2.582 | 56.0h |
+| BTCUSDT | M6 | 2025 | D100_RR3_H168 | 32 | 0.5619 | 0.6765 | -7.248 | 77.4h |
+| BTCUSDT | M6 | 2026 retrospective | STOP2_H168 | 40 | 1.0708 | 0.9994 | -0.014 | 65.1h |
+| BTCUSDT | M11 | 2023 | OI05_PRICE025_STOP25_H48 | 19 | 1.4618 | 1.9021 | +5.230 | 34.7h |
+| BTCUSDT | M11 | 2024 | PRICE025_RR3_H48 | 15 | 0.7123 | 0.9529 | -0.383 | 38.7h |
+| BTCUSDT | M11 | 2025 | PRICE025_RR3_H48 | 40 | 1.1597 | 1.1075 | +1.985 | 36.3h |
+| BTCUSDT | M11 | 2026 retrospective | OI05_PRICE025_H36 | 44 | 0.6576 | 0.6139 | -7.754 | 30.0h |
+| ETHUSDT | M6 | 2023 | RR3_H168 | 36 | 0.9060 | 0.9989 | -0.025 | 93.3h |
+| ETHUSDT | M6 | 2024 | D100_VOL12_H168 | 32 | 0.9228 | 1.0021 | +0.039 | 80.9h |
+| ETHUSDT | M6 | 2025 | RR3_H168 | 40 | 1.1391 | 1.3225 | +6.877 | 97.5h |
+| ETHUSDT | M6 | 2026 retrospective | RR3_H168 | 31 | 1.2751 | 1.2471 | +3.799 | 107.2h |
+| ETHUSDT | M11 | 2023 | OI05_PRICE025_STOP25_H48 | 21 | 1.5271 | 1.4759 | +3.370 | 36.6h |
+| ETHUSDT | M11 | 2024 | RR3_H48 | 15 | 1.3184 | 1.6915 | +2.969 | 41.1h |
+| ETHUSDT | M11 | 2025 | RR3_H48 | 20 | 2.1654 | 2.3815 | +10.933 | 38.4h |
+| ETHUSDT | M11 | 2026 retrospective | RR3_H48 | 28 | 0.8429 | 0.9327 | -0.941 | 36.9h |
+
+The 2025 walk-forward is encouraging for M11 on these two symbols, but BTC/ETH sample counts remain modest and the 2026 retrospective results are negative for M11 on both symbols. M6's 2025 walk-forward is split sharply between BTC and ETH. These partial results do not establish cross-symbol robustness. BTC and ETH walk-forward artifacts are [14093772947](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43535470944/artifacts/14093772947) and [14092819744](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43535470944/artifacts/14092819744).
+
+### Current interpretation
+
+- Baseline-inclusive full OHLC stress is now complete; no M6/M11 candidate passes the complete chronological robustness test. M6 long-horizon profiles look strong in aggregate but fail 2025 validation at severe costs. M11 H36/H72 profiles have some positive severe-cost 2025 results but turn sharply negative in 2026 retrospective evidence; the original M11 baseline also fails severe-cost validation.
+- The completed combination matrix produces M6-only per-symbol candidates under the strict development-plus-2025 filter. The best H48 candidate is not consistent across all seven symbols and loses its apparent advantage in the retrospective 2026 audit.
+- The walk-forward matrix remains incomplete. Its remaining five symbol jobs must finish and the aggregate artifact must be inspected before any full walk-forward conclusion.
+- The November forward holdout remains unscored until official funding data is verified. No zero-funding assumption is permitted.
+- No engine is approved for live trading. M3 remains untouched.
+
+PR #2 remains open and in draft. Its changed-file list contains no M3 path.
