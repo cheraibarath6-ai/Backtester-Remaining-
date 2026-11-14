@@ -23,11 +23,11 @@ permissions:
   actions: write
 
 env:
-  BATCH_START: ${{ inputs.start || (github.event.head_commit.message == 'Run HEAD batch 1' && '2021-11-14') || (github.event.head_commit.message == 'Run HEAD batch 2' && '2022-01-01') || (github.event.head_commit.message == 'Run HEAD batch 3' && '2023-01-01') || (github.event.head_commit.message == 'Run HEAD batch 4' && '2024-01-01') || (github.event.head_commit.message == 'Run HEAD batch 5' && '2025-01-01') || (github.event.head_commit.message == 'Run HEAD batch 6' && '2026-01-01') || (github.event.head_commit.message == 'Aggregate HEAD batch 2' && '2022-01-01') }}
-  BATCH_END: ${{ inputs.end || (github.event.head_commit.message == 'Run HEAD batch 1' && '2022-01-01') || (github.event.head_commit.message == 'Run HEAD batch 2' && '2023-01-01') || (github.event.head_commit.message == 'Run HEAD batch 3' && '2024-01-01') || (github.event.head_commit.message == 'Run HEAD batch 4' && '2025-01-01') || (github.event.head_commit.message == 'Run HEAD batch 5' && '2026-01-01') || (github.event.head_commit.message == 'Run HEAD batch 6' && '2026-11-14') || (github.event.head_commit.message == 'Aggregate HEAD batch 2' && '2023-01-01') }}
+  BATCH_START: ${{ github.event.inputs.start || (github.event.head_commit.message == 'Run HEAD batch 1' && '2021-11-14') || (github.event.head_commit.message == 'Run HEAD batch 2' && '2022-01-01') || (github.event.head_commit.message == 'Run HEAD batch 3' && '2023-01-01') || (github.event.head_commit.message == 'Run HEAD batch 4' && '2024-01-01') || (github.event.head_commit.message == 'Run HEAD batch 5' && '2025-01-01') || (github.event.head_commit.message == 'Run HEAD batch 6' && '2026-01-01') || (github.event.head_commit.message == 'Aggregate HEAD batch 2' && '2022-01-01') }}
+  BATCH_END: ${{ github.event.inputs.end || (github.event.head_commit.message == 'Run HEAD batch 1' && '2022-01-01') || (github.event.head_commit.message == 'Run HEAD batch 2' && '2023-01-01') || (github.event.head_commit.message == 'Run HEAD batch 3' && '2024-01-01') || (github.event.head_commit.message == 'Run HEAD batch 4' && '2025-01-01') || (github.event.head_commit.message == 'Run HEAD batch 5' && '2026-01-01') || (github.event.head_commit.message == 'Run HEAD batch 6' && '2026-11-14') || (github.event.head_commit.message == 'Aggregate HEAD batch 2' && '2023-01-01') }}
 
 concurrency:
-  group: head-sequential-${{ github.ref }}-${{ github.event.head_commit.message }}
+  group: head-sequential-${{ github.ref }}-${{ github.event.inputs.start || github.event.head_commit.message }}
   cancel-in-progress: false
 
 jobs:
@@ -264,7 +264,7 @@ jobs:
     name: Dispatch next annual HEAD batch after successful aggregation
     runs-on: ubuntu-latest
     needs: aggregate
-    if: success() && (env.BATCH_END == '2025-01-01' || env.BATCH_END == '2026-01-01')
+    if: success() && ((github.event_name == 'workflow_dispatch' && (github.event.inputs.end == '2025-01-01' || github.event.inputs.end == '2026-01-01')) || github.event.head_commit.message == 'Run HEAD batch 4' || github.event.head_commit.message == 'Run HEAD batch 5')
     steps:
       - name: Dispatch the next batch only after the cumulative report is uploaded
         env:
