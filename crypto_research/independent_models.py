@@ -226,13 +226,22 @@ def make_independent_signals(
     elif model == "M11":
         if open_interest is None or open_interest.empty:
             raise ValueError("M11 requires historical open-interest metrics; no price-only proxy is permitted")
+        # Use contract/base-denominated OI only. Quote-value OI embeds price
+        # movement and can make an OI-pressure signal partly a price signal.
         oi_candidates = (
-            "open_interest_value", "sum_open_interest_value", "sumOpenInterestValue",
-            "open_interest", "sum_open_interest", "sumOpenInterest",
+            "sum_open_interest", "sumOpenInterest",
+            "open_interest_amount", "openInterest", "oi_contracts",
         )
         oi_col = next((column for column in oi_candidates if column in open_interest.columns), None)
         if oi_col is None:
-            raise ValueError("M11 open-interest data has no recognized OI field")
+            quote_columns = {
+                "open_interest_value", "sum_open_interest_value", "sumOpenInterestValue",
+            }
+            if quote_columns.intersection(open_interest.columns):
+                raise ValueError(
+                    "M11 requires contract-denominated open interest; quote-value OI is not accepted"
+                )
+            raise ValueError("M11 open-interest data has no recognized contract-count OI field")
         oi = pd.to_numeric(open_interest[oi_col], errors="coerce").sort_index()
         tf_minutes = {"1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30,
                       "1h": 60, "2h": 120, "4h": 240, "6h": 360,

@@ -350,3 +350,14 @@ The 2025 walk-forward is encouraging for M11 on these two symbols, but BTC/ETH s
 - No engine is approved for live trading. M3 remains untouched.
 
 PR #2 remains open and in draft. Its changed-file list contains no M3 path.
+
+
+## Critical M11 input-field audit — 14 November 2026, 02:35 UTC
+
+A source audit found that Binance Vision daily metrics provide both `sum_open_interest` (base/contract count) and `sum_open_interest_value` (quote notional). The prior M11 selector preferred quote notional. This is not an acceptable proxy for contract build-up because quote OI also moves with price. An MIT-licensed independent OI research repository explicitly warns about this confound; see the new entry in `RESEARCH_SOURCES.md`.
+
+The M11 signal selector now accepts only contract/base-denominated fields (`sum_open_interest`, `sumOpenInterest`, Bybit-style `open_interest_amount`/`openInterest`, or explicit `oi_contracts`). Quote-value-only input is rejected with a clear error. Two regression tests were added: (1) quote-only OI is rejected; (2) when both base and quote OI are present, M11 produces exactly the same signals as the base-only series, even when the quote series moves in the opposite direction. Existing gap-boundary tests now use base OI.
+
+**Consequences:** all previously reported M11 screen, sensitivity, combination, cost-stress and partial walk-forward figures used quote-value OI and are invalid for M11 selection. They are retained only as superseded audit history. M6 and the price-only M7-M10/M12-M15 results are unaffected by this specific field-selection correction. The next seven-symbol independent screen, M6/M11 sensitivity, combination, cost-stress and walk-forward reruns must use the corrected contract-count OI series. No M11 model decision is made from the superseded figures.
+
+The new public-source audit is documented in `RESEARCH_SOURCES.md`. No external code was copied. M3 remains untouched.

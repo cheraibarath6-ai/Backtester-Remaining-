@@ -118,11 +118,54 @@ def test_m11_requires_real_open_interest_and_accepts_binance_field_names():
         make_independent_signals(raw, "M11", "5m")
     bars = prepare_bars(raw, "5m")
     oi = pd.DataFrame(
-        {"sum_open_interest_value": np.linspace(1_000_000, 1_100_000, len(bars))},
+        {"sum_open_interest": np.linspace(100.0, 101.0, len(bars))},
         index=bars.index,
     )
     signals = make_independent_signals(raw, "M11", "5m", open_interest=oi)
     assert set(signals.signal.unique()).issubset({-1, 0, 1})
+
+
+def test_m11_rejects_quote_value_only_open_interest():
+    raw = _synthetic_raw()
+    bars = prepare_bars(raw, "5m")
+    quote_only = pd.DataFrame(
+        {"sum_open_interest_value": np.linspace(1_000_000, 1_100_000, len(bars))},
+        index=bars.index,
+    )
+    with pytest.raises(ValueError, match="contract-denominated open interest"):
+        make_independent_signals(raw, "M11", "5m", open_interest=quote_only)
+
+
+def test_m11_prefers_contract_count_when_quote_value_is_also_present():
+    n = 5000
+    index = pd.date_range("2024-01-01", periods=n, freq="1min", tz="UTC")
+    close = 100.0 * np.exp(np.arange(n) * 0.00015)
+    open_ = np.r_[close[0], close[:-1]]
+    volume = np.full(n, 100.0)
+    raw = pd.DataFrame({
+        "open": open_,
+        "high": np.maximum(open_, close) * 1.0002,
+        "low": np.minimum(open_, close) * 0.9998,
+        "close": close,
+        "volume": volume,
+        "quote_volume": volume * close,
+        "trades": np.full(n, 10),
+        "taker_buy_base": volume * 0.60,
+        "taker_buy_quote": volume * 0.60 * close,
+    }, index=index)
+    bars = prepare_bars(raw, "5m")
+    contract_oi = 100.0 * np.exp(np.arange(len(bars)) * 0.0012)
+    quote_oi = np.linspace(2_000_000.0, 1_000_000.0, len(bars))
+    both = pd.DataFrame({
+        "sum_open_interest": contract_oi,
+        "sum_open_interest_value": quote_oi,
+    }, index=bars.index)
+    base_only = pd.DataFrame({"sum_open_interest": contract_oi}, index=bars.index)
+
+    both_signals = make_independent_signals(raw, "M11", "5m", open_interest=both)
+    base_signals = make_independent_signals(raw, "M11", "5m", open_interest=base_only)
+    assert both_signals.signal.equals(base_signals.signal)
+    assert (both_signals.signal == 1).any()
 
 
 def test_metrics_archive_parser_reads_official_snake_case_fields(tmp_path):
@@ -142,7 +185,9 @@ def test_metrics_archive_parser_reads_official_snake_case_fields(tmp_path):
 
     metrics = read_metrics_zip(archive_path, "BTCUSDT")
     assert len(metrics) == 2
+    assert "sum_open_interest" in metrics.columns
     assert "sum_open_interest_value" in metrics.columns
+    assert metrics.iloc[-1].sum_open_interest == 101.0
     assert metrics.iloc[-1].sum_open_interest_value == 4_250_000.0
     assert metrics.index.tz is not None
 
@@ -190,7 +235,7 @@ def test_m11_does_not_calculate_oi_or_price_change_across_a_data_gap():
     bars = prepare_bars(raw, "5m")
     first_post_gap = pd.Timestamp("2024-01-01 10:10:00", tz="UTC")
     oi = pd.DataFrame(
-        {"sum_open_interest_value": np.where(
+        {"sum_open_interest": np.where(
             bars.index >= first_post_gap, 200.0, 100.0
         )},
         index=bars.index,
