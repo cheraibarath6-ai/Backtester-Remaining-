@@ -36,6 +36,7 @@ jobs:
           allowed_paths = {
               ".github/workflows/head-batch2-resume.yml",
               ".github/workflows/head-cancel-non-head.yml",
+              ".github/workflows/head-independent-btc-eth-two-year.yml",
           }
           page = 1
           runs = []
