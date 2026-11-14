@@ -129,6 +129,7 @@ def acquire_klines(symbol, start, end, root=Path("data")):
     parts = []
     daily_archives_used = set()
     daily_gap_fill_attempted = set()
+    daily_gap_fill_missing = set()
     daily_gap_fill_errors = {}
     start_ts = pd.Timestamp(start)
     end_ts = pd.Timestamp(end)
@@ -149,6 +150,7 @@ def acquire_klines(symbol, start, end, root=Path("data")):
         day_end = min(month_end, end_ts)
         for day in pd.date_range(day_start, day_end.normalize(), freq="D", inclusive="left"):
             ymd = day.strftime("%Y-%m-%d")
+            daily_gap_fill_attempted.add(ymd)
             daily_name = f"{symbol}-1m-{ymd}.zip"
             daily_url = f"{BASE.replace('/monthly', '/daily')}/klines/{symbol}/1m/{daily_name}"
             try:
@@ -158,10 +160,17 @@ def acquire_klines(symbol, start, end, root=Path("data")):
                     verify_checksum=True,
                 )
                 if daily_path:
-                    parts.append(read_zip(daily_path))
-                    daily_archives_used.add(ymd)
+                    daily = read_zip(daily_path)
+                    if not daily.empty:
+                        parts.append(daily)
+                        daily_archives_used.add(ymd)
+                    else:
+                        daily_gap_fill_missing.add(ymd)
+                else:
+                    daily_gap_fill_missing.add(ymd)
             except Exception as error:
                 daily_gap_fill_errors[ymd] = f"{type(error).__name__}: {error}"
+                daily_gap_fill_missing.add(ymd)
 
     if not parts:
         # A 404 for every official archive in this date range can mean the
@@ -170,10 +179,11 @@ def acquire_klines(symbol, start, end, root=Path("data")):
         data = pd.DataFrame(columns=COLS)
         data.index = pd.DatetimeIndex([], tz="UTC", name="open_time")
         data.attrs["duplicate_timestamps_before_dedup"] = 0
-        data.attrs["source"] = "binance_vision_official_usdm_1m"
-        data.attrs["daily_gap_fill_attempted_days"] = []
-        data.attrs["daily_gap_fill_successful_days"] = []
-        data.attrs["daily_gap_fill_errors"] = {}
+        data.attrs["source"] = "binance_vision_official_usdm_1m_monthly"
+        data.attrs["daily_gap_fill_attempted_days"] = sorted(daily_gap_fill_attempted)
+        data.attrs["daily_gap_fill_successful_days"] = sorted(daily_archives_used)
+        data.attrs["daily_gap_fill_missing_days"] = sorted(daily_gap_fill_missing)
+        data.attrs["daily_gap_fill_errors"] = daily_gap_fill_errors
         return data
 
     data = pd.concat(parts).sort_index()
@@ -212,8 +222,13 @@ def acquire_klines(symbol, start, end, root=Path("data")):
                     if not daily.empty:
                         daily_parts.append(daily)
                         daily_archives_used.add(ymd)
+                    else:
+                        daily_gap_fill_missing.add(ymd)
+                else:
+                    daily_gap_fill_missing.add(ymd)
             except Exception as error:
                 daily_gap_fill_errors[ymd] = f"{type(error).__name__}: {error}"
+                daily_gap_fill_missing.add(ymd)
 
         if daily_parts:
             merged = pd.concat([data, *daily_parts]).sort_index()
@@ -231,6 +246,7 @@ def acquire_klines(symbol, start, end, root=Path("data")):
     )
     data.attrs["daily_gap_fill_attempted_days"] = sorted(daily_gap_fill_attempted)
     data.attrs["daily_gap_fill_successful_days"] = sorted(daily_archives_used)
+    data.attrs["daily_gap_fill_missing_days"] = sorted(daily_gap_fill_missing)
     data.attrs["daily_gap_fill_errors"] = daily_gap_fill_errors
     return data
 
@@ -416,6 +432,10 @@ def quality_report(data, symbol, start=None, end=None):
             "duplicate_timestamps": int(data.attrs.get("duplicate_timestamps_before_dedup", 0)),
             "bad_ohlc_rows": 0,
             "source": data.attrs.get("source", "unknown"),
+            "daily_gap_fill_attempted_days": data.attrs.get("daily_gap_fill_attempted_days", []),
+            "daily_gap_fill_successful_days": data.attrs.get("daily_gap_fill_successful_days", []),
+            "daily_gap_fill_missing_days": data.attrs.get("daily_gap_fill_missing_days", []),
+            "daily_gap_fill_errors": data.attrs.get("daily_gap_fill_errors", {}),
         }
 
     if start is not None and end is not None:
@@ -461,4 +481,8 @@ def quality_report(data, symbol, start=None, end=None):
         "duplicate_timestamps": int(data.attrs.get("duplicate_timestamps_before_dedup", 0)),
         "bad_ohlc_rows": int(bad),
         "source": data.attrs.get("source", "unknown"),
+        "daily_gap_fill_attempted_days": data.attrs.get("daily_gap_fill_attempted_days", []),
+        "daily_gap_fill_successful_days": data.attrs.get("daily_gap_fill_successful_days", []),
+        "daily_gap_fill_missing_days": data.attrs.get("daily_gap_fill_missing_days", []),
+        "daily_gap_fill_errors": data.attrs.get("daily_gap_fill_errors", {}),
     }
