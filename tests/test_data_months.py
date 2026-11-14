@@ -27,3 +27,22 @@ def test_months_accepts_timezone_aware_timestamps():
     assert len(result) == 61
     assert result[0] == pd.Timestamp("2021-11-01", tz="UTC")
     assert result[-1] == pd.Timestamp("2026-11-01", tz="UTC")
+
+
+
+def test_quality_report_accepts_timezone_aware_bounds():
+    from crypto_research.data import quality_report
+
+    index = pd.date_range("2025-01-01", periods=2, freq="min", tz="UTC")
+    frame = pd.DataFrame(
+        {
+            "open": [100.0, 100.0],
+            "high": [101.0, 101.0],
+            "low": [99.0, 99.0],
+            "close": [100.0, 100.0],
+            "volume": [1.0, 1.0],
+        },
+        index=index,
+    )
+    report = quality_report(frame, "BTCUSDT", index.min(), index.max() + pd.Timedelta(minutes=1))
+    assert report["coverage_pct"] == 100.0

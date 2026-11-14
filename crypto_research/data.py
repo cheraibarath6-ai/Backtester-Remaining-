@@ -10,10 +10,6 @@ import pandas as pd
 import requests
 
 BASE = "https://data.binance.vision/data/futures/um/monthly"
-def _utc_timestamp(value):
-    ts = pd.Timestamp(value)
-    return ts.tz_localize("UTC") if ts.tzinfo is None else ts.tz_convert("UTC")
-
 
 COLS = [
     "open_time", "open", "high", "low", "close", "volume", "close_time",
@@ -266,8 +262,8 @@ def acquire_funding(symbol, start, end, root=Path("data")):
             archive = pd.concat(archive_parts).sort_index()
             archive = archive[~archive.index.duplicated(keep="last")]
             archive = archive.loc[
-                (archive.index >= pd.Timestamp(start, tz="UTC"))
-                & (archive.index < pd.Timestamp(end, tz="UTC"))
+                (archive.index >= _utc_timestamp(start))
+                & (archive.index < _utc_timestamp(end))
             ]
             missing_months = sorted(set(expected_months) - set(found_months))
             if not archive.empty and not missing_months:
@@ -294,8 +290,8 @@ def acquire_funding(symbol, start, end, root=Path("data")):
             out = api
             source = "binance_official_api"
         out = out.loc[
-            (out.index >= pd.Timestamp(start, tz="UTC"))
-            & (out.index < pd.Timestamp(end, tz="UTC"))
+            (out.index >= _utc_timestamp(start))
+            & (out.index < _utc_timestamp(end))
         ]
         out.attrs["source"] = source
         out.attrs["missing_archive_months"] = missing_months
@@ -327,8 +323,8 @@ def acquire_funding(symbol, start, end, root=Path("data")):
         out = out.set_index("funding_time")[["funding_rate"]].sort_index()
         out["mark_price"] = float("nan")
         out = out.loc[
-            (out.index >= pd.Timestamp(start, tz="UTC"))
-            & (out.index < pd.Timestamp(end, tz="UTC"))
+            (out.index >= _utc_timestamp(start))
+            & (out.index < _utc_timestamp(end))
         ]
         out.attrs["source"] = "third_party_huggingface_archive_unverified"
         out.attrs["official_archive_error"] = str(archive_error) if archive_error else None
@@ -347,8 +343,8 @@ def quality_report(data, symbol, start=None, end=None):
         }
 
     if start is not None and end is not None:
-        expected_start = pd.Timestamp(start, tz="UTC")
-        expected_end = pd.Timestamp(end, tz="UTC")
+        expected_start = _utc_timestamp(start)
+        expected_end = _utc_timestamp(end)
         expected = pd.date_range(
             expected_start, expected_end - pd.Timedelta(minutes=1), freq="1min"
         )
