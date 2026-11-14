@@ -243,14 +243,13 @@ def make_independent_signals(
                 )
             raise ValueError("M11 open-interest data has no recognized contract-count OI field")
         oi = pd.to_numeric(open_interest[oi_col], errors="coerce").sort_index()
-        tf_minutes = {"1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30,
-                      "1h": 60, "2h": 120, "4h": 240, "6h": 360,
-                      "12h": 720, "1d": 1440}[timeframe]
-        # Only carry a source snapshot forward within one strategy bar.
-        # Long gaps stay missing rather than creating synthetic OI signals.
+        # Binance USD-M metrics are 5-minute snapshots. A slow strategy
+        # timeframe does not make a stale OI observation current: only carry
+        # the latest snapshot by at most one source interval. In particular,
+        # never forward-fill a missing 1h/4h OI interval for an entire bar.
         oi = oi.reindex(
             d.index, method="ffill",
-            tolerance=pd.Timedelta(minutes=tf_minutes),
+            tolerance=pd.Timedelta(minutes=5),
         )
         lookback = int(parameters.get("oi_lookback", 12))
         oi_change_min = float(parameters.get("oi_change_min", 0.01))
