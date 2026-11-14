@@ -1,58 +1,503 @@
 from __future__ import annotations
-import argparse, json
+
+import argparse
+import json
 from pathlib import Path
+
 import pandas as pd
 
-def pf(values):
-    x = pd.to_numeric(values, errors="coerce").dropna()
-    gains = float(x[x > 0].sum()); losses = abs(float(x[x < 0].sum()))
-    return gains / losses if losses else (None if gains == 0 else float("inf"))
+from .backtest import summarize
+
+DEFAULT_SYMBOLS = [
+    "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT",
+    "DOGEUSDT", "ADAUSDT", "LINKUSDT", "LTCUSDT", "AVAXUSDT",
+]
+AUDIT_EXITS = {"DATA_GAP", "END_OF_SAMPLE"}
+MODEL_ORDER = ("M6", "M8", "M12", "M14", "M15")
+
+
+def _as_utc(value):
+    ts = pd.Timestamp(value)
+    return ts.tz_localize("UTC") if ts.tzinfo is None else ts.tz_convert("UTC")
+
+
+def _read_batch_artifacts(root):
+    summaries = []
+    ledgers = []
+    triggers = []
+    for path in sorted(root.rglob("*_summary.json")):
+        row = json.loads(path.read_text())
+        symbol = str(row.get("symbol", "")).upper()
+        if not symbol:
+            raise RuntimeError(f"Summary has no symbol: {path}")
+        summaries.append(row)
+
+        trade_path = path.parent / f"{symbol}_trades.csv"
+        if trade_path.exists() and trade_path.stat().st_size:
+            try:
+                trades = pd.read_csv(trade_path)
+            except pd.errors.EmptyDataError:
+                trades = pd.DataFrame()
+            if not trades.empty:
+                trades["symbol"] = symbol
+                ledgers.append(trades)
+
+        trigger_path = path.parent / f"{symbol}_trigger_audit.csv"
+        if trigger_path.exists() and trigger_path.stat().st_size:
+            try:
+                audit = pd.read_csv(trigger_path)
+            except pd.errors.EmptyDataError:
+                audit = pd.DataFrame()
+            if not audit.empty:
+                first = audit.columns[0]
+                if str(first).startswith("Unnamed") or first == "bar_close_time":
+                    audit = audit.rename(columns={first: "signal_time"})
+                audit["symbol"] = symbol
+                triggers.append(audit)
+
+    if not summaries:
+        raise RuntimeError("No HEAD symbol summaries found in downloaded batch artifacts")
+    return summaries, ledgers, triggers
+
+
+def _valid_trades(all_trades):
+    if all_trades.empty:
+        return all_trades.copy()
+    valid = all_trades.loc[~all_trades.exit_reason.isin(AUDIT_EXITS)].copy()
+    if valid.empty:
+        return valid
+    valid["exit_time"] = pd.to_datetime(valid.exit_time, utc=True)
+    key = [c for c in ("symbol", "entry_time", "exit_time", "source_model") if c in valid]
+    return valid.drop_duplicates(key).sort_values(["exit_time", "symbol"]).reset_index(drop=True)
+
+
+def _window_coverage(group, expected_start, expected_end):
+    rows = 0
+    expected_minutes = 0
+    actual_starts = []
+    actual_ends = []
+    for row in group:
+        q = row.get("candle_quality") or {}
+        rows += int(q.get("rows") or 0)
+        expected_minutes += int(q.get("expected_minutes") or 0)
+        if row.get("actual_candle_start"):
+            actual_starts.append(_as_utc(row["actual_candle_start"]))
+        if row.get("actual_candle_end_exclusive"):
+            actual_ends.append(_as_utc(row["actual_candle_end_exclusive"]))
+
+    coverage = 100.0 * rows / expected_minutes if expected_minutes else 0.0
+    actual_start = min(actual_starts) if actual_starts else None
+    actual_end = max(actual_ends) if actual_ends else None
+    listed_minutes = (
+        max(0.0, (actual_end - actual_start).total_seconds() / 60.0)
+        if actual_start is not None and actual_end is not None else 0.0
+    )
+    listed_coverage = 100.0 * rows / listed_minutes if listed_minutes else 0.0
+    return {
+        "candle_rows": rows,
+        "expected_minutes": expected_minutes,
+        "requested_window_coverage_pct": round(coverage, 4),
+        "listed_span_minutes": round(listed_minutes, 2),
+        "listed_span_coverage_pct": round(listed_coverage, 4),
+        "actual_data_start": str(actual_start) if actual_start is not None else None,
+        "actual_data_end_exclusive": str(actual_end) if actual_end is not None else None,
+        "listing_delay_days": (
+            round(max(0.0, (actual_start - expected_start).total_seconds() / 86400), 4)
+            if actual_start is not None else None
+        ),
+    }
+
+
+def _aggregate_metrics(frame):
+    return summarize(frame) if not frame.empty else summarize(pd.DataFrame())
+
+
+def _year_tables(valid):
+    yearly_rows = []
+    symbol_year_rows = []
+    if valid.empty:
+        return pd.DataFrame(), pd.DataFrame()
+    work = valid.copy()
+    work["year"] = pd.to_datetime(work.exit_time, utc=True).dt.year
+    for year, group in work.groupby("year", sort=True):
+        yearly_rows.append({"year": int(year), **_aggregate_metrics(group)})
+    for (symbol, year), group in work.groupby(["symbol", "year"], sort=True):
+        symbol_year_rows.append({
+            "symbol": symbol, "year": int(year), **_aggregate_metrics(group)
+        })
+    return pd.DataFrame(yearly_rows), pd.DataFrame(symbol_year_rows)
+
+
+def _model_attribution(valid, trigger_audit, expected_symbols):
+    trigger_counts = {(symbol, model): 0 for symbol in expected_symbols for model in MODEL_ORDER}
+    selected_counts = {(symbol, model): 0 for symbol in expected_symbols for model in MODEL_ORDER}
+    if not trigger_audit.empty:
+        for row in trigger_audit.to_dict("records"):
+            symbol = str(row.get("symbol", "")).upper()
+            fired = str(row.get("trigger_sources", "") or "")
+            for model in set(x.strip() for x in fired.split(",") if x.strip()):
+                if model in MODEL_ORDER:
+                    trigger_counts[(symbol, model)] = trigger_counts.get((symbol, model), 0) + 1
+            selected = str(row.get("head_source", "") or "")
+            if selected in MODEL_ORDER:
+                selected_counts[(symbol, selected)] = selected_counts.get((symbol, selected), 0) + 1
+
+    rows = []
+    for symbol in expected_symbols:
+        for model in MODEL_ORDER:
+            group = (
+                valid.loc[
+                    (valid.symbol == symbol) & (valid.source_model == model)
+                ].copy()
+                if not valid.empty else pd.DataFrame()
+            )
+            metrics = _aggregate_metrics(group)
+            rows.append({
+                "symbol": symbol,
+                "model": model,
+                "trigger_bars": int(trigger_counts.get((symbol, model), 0)),
+                "selected_bars": int(selected_counts.get((symbol, model), 0)),
+                "trades": metrics["trades"],
+                "wins": metrics["wins"],
+                "losses": metrics["losses"],
+                "win_rate_pct": metrics["win_rate_pct"],
+                "profit_factor": metrics["profit_factor"],
+                "net_bps": metrics["net_bps"],
+                "net_R": metrics["net_R"],
+            })
+    return pd.DataFrame(rows)
+
 
 def main():
-    p=argparse.ArgumentParser()
-    p.add_argument("--input",default="input-artifacts"); p.add_argument("--out",default="head_results")
-    p.add_argument("--expected-symbols",nargs="+",default=["BTCUSDT","ETHUSDT","BNBUSDT","SOLUSDT","XRPUSDT","DOGEUSDT","ADAUSDT","LINKUSDT","LTCUSDT","AVAXUSDT"])
-    a=p.parse_args(); root=Path(a.input); out=Path(a.out); out.mkdir(parents=True,exist_ok=True)
-    summaries=[]; ledgers=[]; triggers=[]
-    for path in root.rglob("*_summary.json"):
-        row=json.loads(path.read_text()); summaries.append(row); sym=row.get("symbol")
-        tf=path.parent/f"{sym}_trades.csv"; qf=path.parent/f"{sym}_trigger_audit.csv"
-        if tf.exists():
-            t=pd.read_csv(tf)
-            if not t.empty: ledgers.append(t)
-        if qf.exists():
-            q=pd.read_csv(qf)
-            if not q.empty: q["symbol"]=sym; triggers.append(q)
-    sdf=pd.DataFrame(summaries)
-    if sdf.empty: raise RuntimeError("No symbol summaries found")
-    sdf.to_csv(out/"head_per_symbol_results.csv",index=False)
-    all_t=pd.concat(ledgers,ignore_index=True) if ledgers else pd.DataFrame()
-    if not all_t.empty:
-        all_t.to_csv(out/"head_complete_trade_ledger.csv",index=False)
-        valid=all_t.loc[~all_t.exit_reason.isin(["DATA_GAP","END_OF_SAMPLE"])].copy()
-        valid["exit_time"]=pd.to_datetime(valid.exit_time,utc=True)
-        valid["year"]=valid.exit_time.dt.year
-        yearly=valid.groupby("year").agg(trades=("net_bps","size"),net_bps=("net_bps","sum"),net_R=("net_R","sum"),win_rate_pct=("net_bps",lambda s:float((s>0).mean()*100)),profit_factor=("net_bps",pf)).reset_index()
-        yearly.to_csv(out/"head_yearly_trade_stream.csv",index=False)
-        bysym=valid.groupby("symbol").agg(trades=("net_bps","size"),net_bps=("net_bps","sum"),net_R=("net_R","sum"),win_rate_pct=("net_bps",lambda s:float((s>0).mean()*100)),profit_factor=("net_bps",pf)).reset_index()
-        bysym.to_csv(out/"head_symbol_trade_stream.csv",index=False)
-        overall={"trades":int(len(valid)),"wins":int((valid.net_bps>0).sum()),"losses":int((valid.net_bps<=0).sum()),"win_rate_pct":float((valid.net_bps>0).mean()*100),"profit_factor":pf(valid.net_bps),"net_bps":float(valid.net_bps.sum()),"net_R":float(valid.net_R.sum()),"avg_net_bps":float(valid.net_bps.mean()),"data_gap_records":int(all_t.exit_reason.eq("DATA_GAP").sum()),"end_of_sample_records":int(all_t.exit_reason.eq("END_OF_SAMPLE").sum()),"same_bar_conflict_trades":int(valid.same_bar_conflict.sum())}
-    else: overall={"trades":0,"profit_factor":None,"net_bps":0.0,"net_R":0.0}
-    tr=pd.concat(triggers,ignore_index=True) if triggers else pd.DataFrame()
-    if not tr.empty: tr.to_csv(out/"head_trigger_audit_all_symbols.csv",index=False)
-    found=set(sdf.symbol.astype(str)); missing=sorted(set(a.expected_symbols)-found)
-    dq=sdf[["symbol","start_inclusive","end_exclusive","funding_source","funding_rows","funding_max_gap_hours"]].copy()
-    dq["candle_coverage_pct"]=sdf.candle_quality.map(lambda x:x.get("coverage_pct") if isinstance(x,dict) else None)
-    dq["actual_data_start"]=sdf.candle_quality.map(lambda x:x.get("start") if isinstance(x,dict) else None)
-    dq["actual_data_end"]=sdf.candle_quality.map(lambda x:x.get("end") if isinstance(x,dict) else None)
-    dq.to_csv(out/"head_data_quality.csv",index=False)
-    report={"engine":"HEAD","logic":"OR: any one of M6/M8/M14/M12/M15 triggers; no voting or confirmation","timeframe":"4h","requested_window":[sdf.start_inclusive.min(),sdf.end_exclusive.max()],"expected_symbols":a.expected_symbols,"completed_symbols":sorted(found),"missing_symbols":missing,"all_symbols_completed":not missing,"per_symbol_summaries":summaries,"aggregate_trade_stream_diagnostic_not_portfolio":overall,"caveat":"Cross-symbol trade-stream aggregation is not a capital-weighted portfolio return. Contract listing dates and candle coverage differ; inspect data-quality CSV."}
-    (out/"HEAD_FIVE_YEAR_RESULTS.json").write_text(json.dumps(report,indent=2,default=str))
-    lines=["# HEAD — five-model OR engine backtest","","A trigger from any one of M6, M8, M14, M12 or M15 is sufficient. No model voting or confirmation is used.","",f"Window: {report['requested_window'][0]} to {report['requested_window'][1]} (end exclusive)","Timeframe: 4h",f"Symbols completed: {len(found)}/{len(a.expected_symbols)}","","| Symbol | Trades | Net PF | Net bps | Net-R | Win rate | Candle coverage |","|---|---:|---:|---:|---:|---:|---:|"]
-    for row in summaries:
-        lines.append("| {0} | {1} | {2} | {3} | {4} | {5}% | {6}% |".format(row.get("symbol"),row.get("trades"),row.get("profit_factor"),row.get("net_bps"),row.get("net_R"),row.get("win_rate_pct"),(row.get("candle_quality") or {}).get("coverage_pct")))
-    lines += ["","## Combined trade-stream diagnostic (not portfolio return)",f"- Valid trades: {overall.get('trades')}",f"- Net PF: {overall.get('profit_factor')}",f"- Net bps: {overall.get('net_bps')}",f"- Net-R: {overall.get('net_R')}",f"- Win rate: {overall.get('win_rate_pct')}%",f"- Same-bar conflict trades: {overall.get('same_bar_conflict_trades')}","","## Audit files","- head_complete_trade_ledger.csv","- head_trigger_audit_all_symbols.csv","- head_yearly_trade_stream.csv","- head_symbol_trade_stream.csv","- head_data_quality.csv","","Cross-symbol sums are not portfolio returns. DATA_GAP and END_OF_SAMPLE rows remain audited but are excluded from performance metrics."]
-    (out/"HEAD_FIVE_YEAR_RESULTS.md").write_text("\n".join(lines)+"\n")
-    print(f"HEAD AGGREGATE symbols={len(found)}/{len(a.expected_symbols)} trades={overall.get('trades')} PF={overall.get('profit_factor')} net_bps={overall.get('net_bps')}",flush=True)
-    if missing: raise RuntimeError(f"Incomplete asset universe: {missing}")
-if __name__=="__main__": main()
+    parser = argparse.ArgumentParser(
+        description="Aggregate cumulative HEAD OR-engine batches across the full ten-asset universe"
+    )
+    parser.add_argument("--input", default="input-artifacts")
+    parser.add_argument("--out", default="head_results")
+    parser.add_argument("--expected-symbols", nargs="+", default=DEFAULT_SYMBOLS)
+    parser.add_argument("--expected-start", default="2021-11-14")
+    parser.add_argument("--expected-end", required=True)
+    parser.add_argument("--current-start", required=True)
+    parser.add_argument("--current-end", required=True)
+    args = parser.parse_args()
+
+    root = Path(args.input)
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    expected_symbols = [str(s).upper() for s in args.expected_symbols]
+    expected_start = _as_utc(args.expected_start)
+    expected_end = _as_utc(args.expected_end)
+    current_start = _as_utc(args.current_start)
+    current_end = _as_utc(args.current_end)
+    if expected_end <= expected_start or current_end <= current_start:
+        raise RuntimeError("Invalid expected or current batch window")
+
+    summaries, ledgers, trigger_frames = _read_batch_artifacts(root)
+    sdf = pd.DataFrame(summaries)
+    sdf["symbol"] = sdf.symbol.astype(str).str.upper()
+    sdf["start_inclusive"] = sdf.start_inclusive.astype(str)
+    sdf["end_exclusive"] = sdf.end_exclusive.astype(str)
+
+    current_rows = sdf.loc[
+        (sdf.start_inclusive == args.current_start)
+        & (sdf.end_exclusive == args.current_end)
+    ]
+    current_found = set(current_rows.symbol)
+    current_missing = sorted(set(expected_symbols) - current_found)
+    current_duplicates = sorted(
+        symbol for symbol, count in current_rows.symbol.value_counts().items()
+        if count != 1
+    )
+    if current_missing or current_duplicates:
+        raise RuntimeError(
+            f"Current batch is incomplete: missing={current_missing}, "
+            f"duplicate_summaries={current_duplicates}"
+        )
+
+    windows = sorted(set(zip(sdf.start_inclusive, sdf.end_exclusive)))
+    cursor = expected_start
+    for start_text, end_text in windows:
+        start_ts, end_ts = _as_utc(start_text), _as_utc(end_text)
+        if start_ts != cursor:
+            raise RuntimeError(
+                f"Batch coverage is not contiguous: expected next start {cursor}, "
+                f"found {start_ts}..{end_ts}"
+            )
+        if end_ts <= start_ts:
+            raise RuntimeError(f"Invalid batch interval {start_text}..{end_text}")
+        cursor = end_ts
+    if cursor != expected_end:
+        raise RuntimeError(
+            f"Batch history ends at {cursor}, expected {expected_end}"
+        )
+    expected_windows = set(windows)
+    for symbol in expected_symbols:
+        symbol_windows = set(
+            zip(
+                sdf.loc[sdf.symbol == symbol, "start_inclusive"],
+                sdf.loc[sdf.symbol == symbol, "end_exclusive"],
+            )
+        )
+        if symbol_windows != expected_windows:
+            raise RuntimeError(
+                f"{symbol} does not have a complete summary for every batch: "
+                f"missing={sorted(expected_windows - symbol_windows)}"
+            )
+
+    all_trades = pd.concat(ledgers, ignore_index=True) if ledgers else pd.DataFrame()
+    if not all_trades.empty:
+        all_trades["symbol"] = all_trades.symbol.astype(str).str.upper()
+        all_trades = all_trades.drop_duplicates(
+            [c for c in ("symbol", "entry_time", "exit_time", "exit_reason", "source_model")
+             if c in all_trades]
+        )
+        all_trades.to_csv(out / "head_complete_trade_ledger.csv", index=False)
+    valid = _valid_trades(all_trades)
+    if not valid.empty:
+        valid.to_csv(out / "head_valid_trade_ledger.csv", index=False)
+
+    trigger_audit = (
+        pd.concat(trigger_frames, ignore_index=True)
+        if trigger_frames else pd.DataFrame()
+    )
+    if not trigger_audit.empty:
+        trigger_audit["symbol"] = trigger_audit.symbol.astype(str).str.upper()
+        if "signal_time" in trigger_audit:
+            trigger_audit["signal_time"] = pd.to_datetime(
+                trigger_audit.signal_time, utc=True, errors="coerce"
+            )
+        trigger_audit = trigger_audit.drop_duplicates(
+            [c for c in ("symbol", "signal_time", "head_source", "trigger_sources")
+             if c in trigger_audit]
+        )
+        trigger_audit.to_csv(out / "head_trigger_audit_all_symbols.csv", index=False)
+
+    per_symbol_rows = []
+    quality_rows = []
+    for symbol in expected_symbols:
+        group = sdf.loc[sdf.symbol == symbol].to_dict("records")
+        symbol_trades = (
+            all_trades.loc[all_trades.symbol == symbol].copy()
+            if not all_trades.empty else pd.DataFrame()
+        )
+        metrics = _aggregate_metrics(symbol_trades)
+        coverage = _window_coverage(group, expected_start, expected_end)
+        model_counts = {model: 0 for model in MODEL_ORDER}
+        funding_sources = set()
+        funding_rows = 0
+        funding_starts = []
+        funding_ends = []
+        funding_max_gaps = []
+        funding_first_gaps = []
+        funding_last_gaps = []
+        conflict_bars = 0
+        multi_trigger_bars = 0
+        head_trigger_bars = 0
+        for row in group:
+            for model, count in (row.get("model_trigger_bars") or {}).items():
+                if model in model_counts:
+                    model_counts[model] += int(count or 0)
+            source = row.get("funding_source")
+            if source:
+                funding_sources.add(str(source))
+            funding_rows += int(row.get("funding_rows") or 0)
+            for field, target in (
+                ("funding_actual_start", funding_starts),
+                ("funding_actual_end", funding_ends),
+                ("funding_max_gap_hours", funding_max_gaps),
+                ("funding_first_gap_hours", funding_first_gaps),
+                ("funding_last_gap_hours", funding_last_gaps),
+            ):
+                value = row.get(field)
+                if value is not None:
+                    target.append(value)
+            conflict_bars += int(row.get("conflict_bars") or 0)
+            multi_trigger_bars += int(row.get("multi_trigger_bars") or 0)
+            head_trigger_bars += int(row.get("head_trigger_bars") or 0)
+
+        funding_sources.discard("not_applicable_no_official_candle_data")
+        funding_source = (
+            ";".join(sorted(funding_sources))
+            if funding_sources else "not_applicable_no_official_candle_data"
+        )
+        data_status = (
+            "NO_OFFICIAL_CANDLE_DATA" if coverage["candle_rows"] == 0
+            else "PARTIAL_CANDLE_COVERAGE"
+            if coverage["requested_window_coverage_pct"] < 100
+            else "OK"
+        )
+        per_symbol_rows.append({
+            "symbol": symbol,
+            **metrics,
+            "head_trigger_bars": head_trigger_bars,
+            "model_trigger_bars": model_counts,
+            "conflict_bars": conflict_bars,
+            "multi_trigger_bars": multi_trigger_bars,
+            "same_bar_conflict_trades": (
+                int(valid.loc[valid.symbol == symbol, "same_bar_conflict"].sum())
+                if not valid.empty and "same_bar_conflict" in valid else 0
+            ),
+            "funding_source": funding_source,
+            "funding_rows": funding_rows,
+            "funding_max_gap_hours": max(funding_max_gaps) if funding_max_gaps else None,
+            "data_status": data_status,
+            **coverage,
+        })
+        quality_rows.append({
+            "symbol": symbol,
+            "data_status": data_status,
+            **coverage,
+            "funding_source": funding_source,
+            "funding_rows": funding_rows,
+            "funding_actual_start": min(funding_starts) if funding_starts else None,
+            "funding_actual_end": max(funding_ends) if funding_ends else None,
+            "funding_max_gap_hours": max(funding_max_gaps) if funding_max_gaps else None,
+            "funding_worst_first_gap_hours": max(funding_first_gaps) if funding_first_gaps else None,
+            "funding_worst_last_gap_hours": max(funding_last_gaps) if funding_last_gaps else None,
+            "batches_with_data": sum(
+                1 for row in group
+                if int((row.get("candle_quality") or {}).get("rows") or 0) > 0
+            ),
+            "batches_total": len(group),
+        })
+
+    per_symbol = pd.DataFrame(per_symbol_rows)
+    per_symbol.to_csv(out / "head_per_symbol_results.csv", index=False)
+    data_quality = pd.DataFrame(quality_rows)
+    data_quality.to_csv(out / "head_data_quality.csv", index=False)
+
+    overall = _aggregate_metrics(valid)
+    overall.update({
+        "same_bar_conflict_trades": (
+            int(valid.same_bar_conflict.sum())
+            if not valid.empty and "same_bar_conflict" in valid else 0
+        ),
+        "conflict_bars": (
+            int(trigger_audit.same_bar_conflict.sum())
+            if not trigger_audit.empty and "same_bar_conflict" in trigger_audit else 0
+        ),
+        "multi_trigger_bars": (
+            int((pd.to_numeric(trigger_audit.trigger_count, errors="coerce") > 1).sum())
+            if not trigger_audit.empty and "trigger_count" in trigger_audit else 0
+        ),
+        "trade_stream_not_portfolio": True,
+    })
+    yearly, symbol_yearly = _year_tables(valid)
+    yearly.to_csv(out / "head_yearly_trade_stream.csv", index=False)
+    symbol_yearly.to_csv(out / "head_symbol_yearly_results.csv", index=False)
+    attribution = _model_attribution(valid, trigger_audit, expected_symbols)
+    attribution.to_csv(out / "head_model_attribution.csv", index=False)
+
+    report = {
+        "engine": "HEAD",
+        "logic": "OR: any one of M6/M8/M12/M14/M15 triggers; no voting or confirmation",
+        "same_bar_policy": (
+            "Same-direction triggers are coalesced into one entry. If opposite "
+            "directions fire on the same completed bar, deterministic priority "
+            "M6 > M8 > M14 > M12 > M15 selects the side and source; the conflict "
+            "is logged. Priority does not add a confirmation filter."
+        ),
+        "timeframe": "4h",
+        "requested_window": [args.expected_start, args.expected_end],
+        "batches": [{"start_inclusive": s, "end_exclusive": e} for s, e in windows],
+        "expected_symbols": expected_symbols,
+        "completed_symbols": expected_symbols,
+        "all_symbols_completed": True,
+        "per_symbol_results": per_symbol_rows,
+        "aggregate_trade_stream_diagnostic_not_portfolio": overall,
+        "yearly_trade_stream": yearly.to_dict("records"),
+        "model_attribution_file": "head_model_attribution.csv",
+        "data_quality_file": "head_data_quality.csv",
+        "caveat": (
+            "Cross-symbol trade-stream metrics are diagnostics, not portfolio "
+            "returns. No capital allocation, margin, concurrent exposure or "
+            "portfolio sizing model is applied. DATA_GAP and END_OF_SAMPLE rows "
+            "remain in the complete audit ledger and are excluded from all "
+            "performance metrics. Candle coverage includes pre-listing periods; "
+            "listed-span coverage is reported separately."
+        ),
+    }
+    (out / "HEAD_FIVE_YEAR_RESULTS.json").write_text(
+        json.dumps(report, indent=2, default=str)
+    )
+
+    lines = [
+        "# HEAD — five-model OR engine cumulative backtest",
+        "",
+        "Any one of M6, M8, M12, M14 or M15 can trigger an entry; there is no voting, consensus or added confirmation.",
+        "Same-direction triggers are coalesced. Opposing same-bar triggers use deterministic priority M6 > M8 > M14 > M12 > M15 and are logged.",
+        "",
+        f"Requested window: {args.expected_start} to {args.expected_end} (end exclusive)",
+        f"Completed date batches: {len(windows)}",
+        "Timeframe: 4h",
+        "Execution costs: 5 bps fee + 2 bps slippage per side",
+        "",
+        "## Per-symbol results",
+        "",
+        "| Symbol | Trades | Wins/Losses | PF | Net bps | Net-R | Win rate | Max DD | Window coverage | Listed-span coverage | Actual data dates |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+    ]
+    for row in per_symbol_rows:
+        dates = (
+            f"{row['actual_data_start']} to {row['actual_data_end_exclusive']}"
+            if row["actual_data_start"] else "No official candles"
+        )
+        lines.append(
+            f"| {row['symbol']} | {row['trades']} | {row['wins']}/{row['losses']} | "
+            f"{row['profit_factor']} | {row['net_bps']} | {row['net_R']} | "
+            f"{row['win_rate_pct']}% | {row['max_drawdown_pct']}% | "
+            f"{row['requested_window_coverage_pct']}% | "
+            f"{row['listed_span_coverage_pct']}% | {dates} |"
+        )
+    lines += [
+        "",
+        "## Combined trade-stream diagnostic (not portfolio return)",
+        f"- Valid trades: {overall.get('trades')}",
+        f"- Wins / losses: {overall.get('wins')} / {overall.get('losses')}",
+        f"- Win rate: {overall.get('win_rate_pct')}%",
+        f"- Profit factor: {overall.get('profit_factor')}",
+        f"- Net bps: {overall.get('net_bps')}",
+        f"- Net-R: {overall.get('net_R')}",
+        f"- Fixed-risk max drawdown: {overall.get('max_drawdown_pct')}%",
+        f"- Same-bar conflict bars: {overall.get('conflict_bars')}",
+        f"- Same-bar conflict trades: {overall.get('same_bar_conflict_trades')}",
+        "",
+        "## Year-wise trade-stream performance",
+        "",
+        "| Year | Trades | PF | Net bps | Net-R | Win rate | Max DD |",
+        "|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+    for row in yearly.to_dict("records"):
+        lines.append(
+            f"| {row['year']} | {row['trades']} | {row['profit_factor']} | "
+            f"{row['net_bps']} | {row['net_R']} | {row['win_rate_pct']}% | "
+            f"{row['max_drawdown_pct']}% |"
+        )
+    lines += [
+        "",
+        "## Source-model trigger and trade attribution",
+        "",
+        "See head_model_attribution.csv for trigger bars, selected bars, trades, PF, net bps and net-R by symbol and source model.",
+        "",
+        "## Data and audit files",
+        "- head_data_quality.csv — official candle/funding sources, actual dates, requested-window and listed-span coverage",
+        "- head_complete_trade_ledger.csv — all trade and audit records",
+        "- head_valid_trade_ledger.csv — performance-eligible trades only",
+        "- head_trigger_audit_all_symbols.csv — trigger and same-bar conflict audit",
+        "- head_yearly_trade_stream.csv — annual combined trade-stream metrics",
+        "- head_symbol_yearly_results.csv — annual metrics by symbol",
+        "- head_model_attribution.csv — trigger and selected-trade attribution",
+        "",
+        "Cross-symbol metrics are not portfolio returns. No capital allocation, margin, concurrency or exposure model is applied. DATA_GAP and END_OF_SAMPLE rows remain in the complete audit ledger but are excluded from performance metrics.",
+    ]
+    (out / "HEAD_FIVE_YEAR_RESULTS.md").write_text("\n".join(lines) + "\n")
+    print(
+        f"HEAD CUMULATIVE AGGREGATE batches={len(windows)} "
+        f"symbols={len(expected_symbols)} trades={overall.get('trades')} "
+        f"PF={overall.get('profit_factor')} net_bps={overall.get('net_bps')}",
+        flush=True,
+    )
+
+
+if __name__ == "__main__":
+    main()
