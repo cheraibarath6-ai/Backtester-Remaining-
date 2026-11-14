@@ -18,3 +18,12 @@ def test_months_respects_exclusive_end_at_month_boundary():
 def test_months_empty_for_empty_or_reversed_range():
     assert len(months("2021-11-14", "2021-11-14")) == 0
     assert len(months("2021-12-01", "2021-11-01")) == 0
+
+
+def test_months_accepts_timezone_aware_timestamps():
+    start = pd.Timestamp("2021-11-14", tz="UTC")
+    end = pd.Timestamp("2026-11-14", tz="UTC")
+    result = months(start, end)
+    assert len(result) == 61
+    assert result[0] == pd.Timestamp("2021-11-01", tz="UTC")
+    assert result[-1] == pd.Timestamp("2026-11-01", tz="UTC")
