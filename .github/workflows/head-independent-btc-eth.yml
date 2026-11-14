@@ -1,0 +1,50 @@
+name: Independent M6-M15 BTC ETH reconciliation (Batch 1)
+
+on:
+  push:
+    branches: [research/funding-notional-audit-v2]
+    paths:
+      - "crypto_research/independent_five_model_audit.py"
+      - ".github/workflows/head-independent-btc-eth.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: head-independent-btc-eth-batch1
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    name: Independent models / ${{ matrix.symbol }} / 4h
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        symbol: [BTCUSDT, ETHUSDT]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Compile and run frozen independent models
+        run: |
+          python -m compileall -q crypto_research/independent_five_model_audit.py
+          python -m pytest -q tests/test_head_engine.py tests/test_data_months.py tests/test_improvement_run.py
+          python -m crypto_research.independent_five_model_audit \
+            --start "2021-11-14" --end "2022-01-01" \
+            --warmup-bars 130 --symbol "${{ matrix.symbol }}" \
+            --fee-bps 5 --slippage-bps 2 --out independent_audit
+      - name: Upload standalone model results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: head-independent-batch1-${{ matrix.symbol }}
+          path: independent_audit/
+          if-no-files-found: warn
+          retention-days: 90
