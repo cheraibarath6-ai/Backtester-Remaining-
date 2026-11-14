@@ -1,4 +1,7 @@
+import pandas as pd
+
 from crypto_research.eight_engine_forward_holdout_run import (
+    _funding_quality,
     FROZEN_VARIANTS,
     HOLDOUT_START,
     MINIMUM_HOLDOUT_DAYS,
@@ -42,3 +45,20 @@ def test_daily_archive_url_uses_official_binance_vision_usdm_path():
         "https://data.binance.vision/data/futures/um/daily/klines/"
         "BTCUSDT/1m/BTCUSDT-1m-2026-11-01.zip"
     )
+
+
+def test_funding_gate_checks_first_and_last_holdout_boundaries():
+    index = pd.to_datetime([
+        "2026-11-01T00:00:00Z",
+        "2026-11-01T08:00:00Z",
+    ], utc=True)
+    funding = pd.DataFrame({"funding_rate": [0.0001, 0.0001]}, index=index)
+    funding.attrs["source"] = "binance_official_api"
+
+    covered = _funding_quality(funding, "2026-11-01", "2026-11-01T16:00:00Z")
+    incomplete = _funding_quality(funding, "2026-11-01", "2026-11-02")
+
+    assert covered["passed"] is True
+    assert covered["holdout_max_gap_hours"] == 8.0
+    assert incomplete["passed"] is False
+    assert incomplete["holdout_max_gap_hours"] == 16.0
