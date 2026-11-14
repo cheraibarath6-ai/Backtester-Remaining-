@@ -113,7 +113,15 @@ def _funding_quality(funding: pd.DataFrame, holdout_start, end) -> dict:
         (funding.index >= _utc(holdout_start)) & (funding.index < _utc(end))
     ] if not funding.empty else funding
     gaps = holdout.index.to_series().diff().dropna() if not holdout.empty else pd.Series(dtype="timedelta64[ns]")
-    max_gap = float(gaps.max().total_seconds() / 3600) if not gaps.empty else None
+    if not holdout.empty:
+        boundary_gaps = [
+            holdout.index[0] - _utc(holdout_start),
+            _utc(end) - holdout.index[-1],
+        ]
+        all_gaps = list(gaps) + boundary_gaps
+        max_gap = max(float(gap.total_seconds() / 3600) for gap in all_gaps)
+    else:
+        max_gap = None
     passed = (
         source in OFFICIAL_FUNDING_SOURCES
         and not holdout.empty
