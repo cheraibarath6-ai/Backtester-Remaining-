@@ -56,3 +56,48 @@ def test_entry_timestamp_is_next_completed_bar_open():
     assert len(trades) == 1
     assert trades.iloc[0].entry_time == str(idx[1] - pd.Timedelta(hours=4))
     assert trades.iloc[0].exit_reason == "TIME"
+
+
+
+def test_batch_history_start_has_130_complete_4h_warmup_bars():
+    from crypto_research.head_engine import batch_history_start
+
+    assert batch_history_start("2022-01-01") == pd.Timestamp("2021-12-10 08:00:00", tz="UTC")
+    assert batch_history_start("2021-11-14") == pd.Timestamp("2021-11-14", tz="UTC")
+
+
+def test_batch_trade_scoping_assigns_boundary_exit_once_and_keeps_cross_boundary_trade():
+    from crypto_research.head_engine import scope_batch_trades
+
+    rows = pd.DataFrame({
+        "entry_time": [
+            "2021-12-31 20:00:00+00:00",
+            "2022-01-01 00:00:00+00:00",
+            "2022-01-01 04:00:00+00:00",
+        ],
+        "exit_time": [
+            "2022-01-01 00:00:00+00:00",
+            "2022-01-01 08:00:00+00:00",
+            "2022-01-01 12:00:00+00:00",
+        ],
+        "exit_reason": ["TARGET", "STOP", "END_OF_SAMPLE"],
+    })
+    first = scope_batch_trades(rows, "2021-11-14", "2022-01-01")
+    second = scope_batch_trades(rows, "2022-01-01", "2023-01-01")
+
+    assert first.index.tolist() == [0]
+    assert second.index.tolist() == [1, 2]
+    assert set(first.index).isdisjoint(set(second.index))
+
+
+def test_batch_scoping_retains_pre_window_data_gap_audit():
+    from crypto_research.head_engine import scope_batch_trades
+
+    rows = pd.DataFrame({
+        "entry_time": ["2021-12-31 12:00:00+00:00"],
+        "exit_time": ["2021-12-31 20:00:00+00:00"],
+        "exit_reason": ["DATA_GAP"],
+    })
+    scoped = scope_batch_trades(rows, "2022-01-01", "2023-01-01")
+    assert len(scoped) == 1
+    assert scoped.iloc[0].exit_reason == "DATA_GAP"
