@@ -2,19 +2,7 @@ name: Independent M6-M11 Sensitivity
 
 on:
   push:
-    branches: [main]
-    paths:
-      - "crypto_research/backtest.py"
-      - "crypto_research/metrics.py"
-      - "crypto_research/independent_models.py"
-      - "crypto_research/sensitivity_run.py"
-      - "crypto_research/aggregate_independent.py"
-      - "tests/test_backtest.py"
-      - "tests/test_sensitivity.py"
-      - "tests/test_aggregate_independent.py"
-      - ".github/workflows/m6-m11-sensitivity.yml"
-  pull_request:
-    branches: [main]
+    branches: [research/funding-notional-audit-v2]
     paths:
       - "crypto_research/backtest.py"
       - "crypto_research/metrics.py"
