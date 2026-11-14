@@ -459,12 +459,12 @@ def main():
         frames[model] = make_independent_signals(
             raw, model, TIMEFRAME, parameters=cfg["parameters"]
         )
-        print(
-            f"MODEL SIGNALS {model}: "
-            f"{int((frames[model].signal.ne(0) & (frames[model].index >= score_start) "
-            f"& (frames[model].index < end_ts)).sum())}",
-            flush=True,
-        )
+        count = int((
+            frames[model].signal.ne(0)
+            & (frames[model].index >= score_start)
+            & (frames[model].index < end_ts)
+        ).sum())
+        print(f"MODEL SIGNALS {model}: {count}", flush=True)
     combined = combine_model_signals(frames, TIMEFRAME)
     all_trades = run_head_backtest(
         combined, funding, symbol, TIMEFRAME,
