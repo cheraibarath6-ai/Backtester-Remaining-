@@ -164,26 +164,32 @@ def batch_history_start(score_start, warmup_bars=WARMUP_BARS):
     return score_start - pd.Timedelta(hours=4 * warmup_bars)
 
 
-def scope_batch_trades(trades, score_start, end):
-    """Assign each completed trade to one batch by its exit-bar close time.
+def scope_batch_trades(trades, score_start, end, include_end=True):
+    """Assign completed trades to one batch by exit-bar close time.
 
-    The interval is (score_start, end], so a trade exiting exactly on a
-    boundary is counted in the preceding batch only. A pre-window DATA_GAP
-    closure is retained as an audit row when a position crosses into a gap.
+    Intermediate batches use (score_start, end], so a boundary exit belongs
+    to the preceding batch only. The final requested window uses
+    (score_start, end); DATA_GAP and END_OF_SAMPLE audit rows at the end
+    boundary are still retained and excluded from performance metrics.
     """
     if trades.empty:
         return trades.copy()
     start_ts, end_ts = _utc(score_start), _utc(end)
     exits = pd.to_datetime(trades.exit_time, utc=True)
     entries = pd.to_datetime(trades.entry_time, utc=True)
-    mask = (exits > start_ts) & (exits <= end_ts)
+    upper = exits <= end_ts if include_end else exits < end_ts
+    mask = (exits > start_ts) & upper
     if "exit_reason" in trades:
         pre_window_gap = (
             trades.exit_reason.eq("DATA_GAP")
             & (entries < start_ts)
             & (exits <= start_ts)
         )
-        mask |= pre_window_gap
+        end_audit = (
+            trades.exit_reason.isin(["DATA_GAP", "END_OF_SAMPLE"])
+            & (exits == end_ts)
+        )
+        mask |= pre_window_gap | end_audit
     return trades.loc[mask].copy()
 
 
@@ -510,7 +516,10 @@ def main():
         combined, funding, symbol, TIMEFRAME,
         args.fee_bps, args.slippage_bps, args.end
     )
-    trades = scope_batch_trades(all_trades, score_start, end_ts)
+    trades = scope_batch_trades(
+        all_trades, score_start, end_ts,
+        include_end=end_ts < _utc(END_DEFAULT),
+    )
     if trades.empty:
         trades = pd.DataFrame(columns=TRADE_COLUMNS)
     valid = (
