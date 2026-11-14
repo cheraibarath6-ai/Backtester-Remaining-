@@ -4,8 +4,6 @@ name: Independent M6-M15 BTC ETH two-year backtest
 on:
   push:
     branches: [research/funding-notional-audit-v2]
-    paths:
-      - ".github/workflows/head-independent-btc-eth-two-year.yml"
 
 permissions:
   contents: read
