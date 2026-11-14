@@ -21,6 +21,12 @@ def acquire_funding(symbol, start, end, root=Path("data")):
         "binance_official_api",
         "binance_vision_official_monthly_archive_partial",
     }
+    if base_source in {
+        "binance_vision_official_monthly_archive",
+        "binance_vision_archive_plus_official_api",
+        "binance_official_api",
+    }:
+        return base
     if base_source not in official_base_sources:
         base = pd.DataFrame(columns=["funding_rate", "mark_price"])
         base.index = pd.DatetimeIndex([], tz="UTC", name="funding_time")
