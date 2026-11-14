@@ -17,12 +17,12 @@ permissions:
   actions: write
 
 concurrency:
-  group: head-year-batch-\${{ github.ref }}-\${{ inputs.start }}-\${{ inputs.end }}
+  group: head-year-batch-${{ github.ref }}-${{ inputs.start }}-${{ inputs.end }}
   cancel-in-progress: false
 
 jobs:
   backtest:
-    name: HEAD / \${{ matrix.symbol }} / 4h
+    name: HEAD / ${{ matrix.symbol }} / 4h
     runs-on: ubuntu-latest
     timeout-minutes: 360
     strategy:
@@ -45,10 +45,10 @@ jobs:
       - name: Run this date batch with indicator warmup
         run: >
           python -m crypto_research.head_engine
-          --start "\${{ inputs.start }}"
-          --end "\${{ inputs.end }}"
+          --start "${{ inputs.start }}"
+          --end "${{ inputs.end }}"
           --warmup-bars 130
-          --symbol "\${{ matrix.symbol }}"
+          --symbol "${{ matrix.symbol }}"
           --fee-bps 5
           --slippage-bps 2
           --out head_artifacts
@@ -56,7 +56,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: head-\${{ inputs.start }}-\${{ inputs.end }}-\${{ matrix.symbol }}
+          name: head-${{ inputs.start }}-${{ inputs.end }}-${{ matrix.symbol }}
           path: head_artifacts/
           if-no-files-found: warn
           retention-days: 90
@@ -76,10 +76,10 @@ jobs:
         run: pip install -r requirements.txt
       - name: Download latest complete artifacts from every date batch
         env:
-          GH_TOKEN: \${{ secrets.GITHUB_TOKEN }}
-          GITHUB_RUN_ID: \${{ github.run_id }}
-          GITHUB_REPOSITORY: \${{ github.repository }}
-          GITHUB_REF_NAME: \${{ github.ref_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
           WORKFLOW_ID: "418165342"
         run: |
           python - <<'PY'
@@ -219,14 +219,14 @@ jobs:
           --input input-artifacts
           --out head_results
           --expected-start "2021-11-14"
-          --expected-end "\${{ inputs.end }}"
-          --current-start "\${{ inputs.start }}"
-          --current-end "\${{ inputs.end }}"
+          --expected-end "${{ inputs.end }}"
+          --current-start "${{ inputs.start }}"
+          --current-end "${{ inputs.end }}"
       - name: Upload cumulative HEAD report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: head-2021-11-14-\${{ inputs.end }}-cumulative-top10-results
+          name: head-2021-11-14-${{ inputs.end }}-cumulative-top10-results
           path: head_results/
           if-no-files-found: warn
           retention-days: 90
@@ -240,7 +240,7 @@ jobs:
       - name: Calculate next contiguous date window
         id: next
         env:
-          CURRENT_END: \${{ inputs.end }}
+          CURRENT_END: ${{ inputs.end }}
         run: |
           python - <<'PY' >> "$GITHUB_OUTPUT"
           import os
@@ -260,15 +260,15 @@ jobs:
       - name: Dispatch next date batch
         if: steps.next.outputs.has_next == 'true'
         env:
-          GH_TOKEN: \${{ secrets.GITHUB_TOKEN }}
-          NEXT_START: \${{ steps.next.outputs.start }}
-          NEXT_END: \${{ steps.next.outputs.end }}
-          TARGET_REF: \${{ github.ref_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEXT_START: ${{ steps.next.outputs.start }}
+          NEXT_END: ${{ steps.next.outputs.end }}
+          TARGET_REF: ${{ github.ref_name }}
         run: |
           curl --fail --silent --show-error \
             --request POST \
             --header "Accept: application/vnd.github+json" \
-            --header "Authorization: Bearer \${GH_TOKEN}" \
+            --header "Authorization: Bearer ${GH_TOKEN}" \
             --header "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/\${GITHUB_REPOSITORY}/actions/workflows/head-five-year.yml/dispatches" \
-            --data "{\"ref\":\"\${TARGET_REF}\",\"inputs\":{\"start\":\"\${NEXT_START}\",\"end\":\"\${NEXT_END}\"}}"
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/head-five-year.yml/dispatches" \
+            --data "{\"ref\":\"${TARGET_REF}\",\"inputs\":{\"start\":\"${NEXT_START}\",\"end\":\"${NEXT_END}\"}}"
