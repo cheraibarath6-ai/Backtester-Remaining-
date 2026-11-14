@@ -75,8 +75,14 @@ def run_backtest(
 
     def finish_position(position, ts, exit_px, reason, held_bars):
         side = position["side"]
-        exit_fill = float(exit_px) * (1 - side * slippage_bps / 10000)
+        raw_exit = float(exit_px)
+        raw_entry = float(position.get("raw_entry", position["entry"]))
+        exit_fill = raw_exit * (1 - side * slippage_bps / 10000)
         gross = side * (exit_fill - position["entry"]) / position["entry"]
+        gross_price_move = side * (raw_exit - raw_entry) / raw_entry
+        entry_slippage = side * (position["entry"] - raw_entry) / raw_entry
+        exit_slippage = side * (raw_exit - exit_fill) / raw_entry
+        slippage_cost = entry_slippage + exit_slippage
         # USD-M contracts keep a fixed base quantity: entry and exit fees are
         # charged on their respective executed notionals, not twice the entry
         # notional. All costs below are expressed relative to entry notional.
@@ -125,6 +131,14 @@ def run_backtest(
             "exit_time": str(ts),
             "entry": position["entry"],
             "exit": exit_fill,
+            "raw_entry": raw_entry,
+            "raw_exit": raw_exit,
+            "gross_price_move_pct": gross_price_move * 100,
+            "gross_price_move_bps": gross_price_move * 10000,
+            "entry_slippage_pct": entry_slippage * 100,
+            "exit_slippage_pct": exit_slippage * 100,
+            "slippage_cost_pct": slippage_cost * 100,
+            "total_cost_pct": (fees + fund_cost + slippage_cost) * 100,
             "stop": position["stop"],
             "initial_stop": position.get("initial_stop", position["stop"]),
             "target": position["target"],
@@ -176,6 +190,7 @@ def run_backtest(
             pos = {
                 "side": side,
                 "entry": entry,
+                "raw_entry": float(raw_entry),
                 "stop": float(stop),
                 "initial_stop": float(stop),
                 "target": float(target),
