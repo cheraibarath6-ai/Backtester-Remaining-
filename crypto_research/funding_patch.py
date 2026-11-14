@@ -57,8 +57,8 @@ def acquire_funding(symbol, start, end, root=Path("data")):
         combined = pd.concat([base, daily]).sort_index()
         combined = combined[~combined.index.duplicated(keep="last")]
         combined = combined.loc[
-            (combined.index >= pd.Timestamp(start, tz="UTC"))
-            & (combined.index < pd.Timestamp(end, tz="UTC"))
+            (combined.index >= _data._utc_timestamp(start))
+            & (combined.index < _data._utc_timestamp(end))
         ]
         combined.attrs["source"] = "binance_vision_monthly_plus_daily_official_archive"
         combined.attrs["missing_archive_months"] = missing_months
