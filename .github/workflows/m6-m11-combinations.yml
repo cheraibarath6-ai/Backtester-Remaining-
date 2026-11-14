@@ -2,21 +2,7 @@ name: Independent M6-M11 Combination Research
 
 on:
   push:
-    branches: [main]
-    paths:
-      - ".github/workflows/m6-m11-combinations.yml"
-      - "crypto_research/combination_run.py"
-      - "crypto_research/backtest.py"
-      - "crypto_research/metrics.py"
-      - "crypto_research/independent_models.py"
-      - "crypto_research/aggregate_independent.py"
-      - "tests/test_combinations.py"
-      - "crypto_research/walkforward_run.py"
-      - "crypto_research/aggregate_walkforward.py"
-      - "tests/test_walkforward.py"
-      - ".github/workflows/m6-m11-walkforward.yml"
-  pull_request:
-    branches: [main]
+    branches: [research/funding-notional-audit-v2]
     paths:
       - ".github/workflows/m6-m11-combinations.yml"
       - "crypto_research/combination_run.py"
