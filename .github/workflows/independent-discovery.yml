@@ -57,7 +57,7 @@ jobs:
           --start "${{ inputs.start || '2021-01-01' }}"
           --end "${{ inputs.end || '2026-11-01' }}"
           --symbol "${{ matrix.symbol }}"
-          --models M1 M2 M4 M5 M6 M7 M8 M9 M10 M11 M12 M13 M14 M15
+          --models M6 M7 M8 M10 M12 M13 M14 M15
           --timeframes 5m 15m 1h 4h
           --fee-bps 5
           --slippage-bps 2
