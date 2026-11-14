@@ -16,6 +16,7 @@ on:
       - "tests/test_cost_stress.py"
       - "tests/test_combinations.py"
       - "tests/test_walkforward.py"
+      - "tests/test_improvement_run.py"
       - ".github/workflows/funding-audit-tests.yml"
 permissions:
   contents: read
