@@ -315,11 +315,11 @@ def main():
     parser.add_argument("--minimum-candle-coverage-pct", type=float, default=99.5)
     parser.add_argument("--out", default="eight_engine_forward_holdout_artifacts")
     args = parser.parse_args()
-    if end := _utc(args.end):
-        if end <= _utc(args.holdout_start):
-            parser.error("--end must be later than --holdout-start")
-        if (end - _utc(args.holdout_start)).days < MINIMUM_HOLDOUT_DAYS:
-            parser.error("Forward holdout requires at least 30 complete UTC days after 2026-11-01")
+    end = _utc(args.end)
+    if end <= _utc(args.holdout_start):
+        parser.error("--end must be later than --holdout-start")
+    if (end - _utc(args.holdout_start)).days < MINIMUM_HOLDOUT_DAYS:
+        parser.error("Forward holdout requires at least 30 complete UTC days after 2026-11-01")
     if _utc(args.start) >= _utc(args.holdout_start):
         parser.error("--start must precede --holdout-start")
     run_symbol(args)
