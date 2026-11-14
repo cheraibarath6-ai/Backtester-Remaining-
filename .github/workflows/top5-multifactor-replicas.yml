@@ -100,3 +100,5 @@ jobs:
           path: top5_replica_results/
           if-no-files-found: warn
           retention-days: 90
+
+# This workflow intentionally runs only M6, M8, M12, M14 and M15 at 4h.
