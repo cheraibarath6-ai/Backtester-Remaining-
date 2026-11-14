@@ -310,13 +310,13 @@ def main():
     symbol = args.symbol.upper()
     print(f"HEAD START {symbol} {args.start}..{args.end}", flush=True)
     raw = acquire_klines(symbol, args.start, args.end)
-    funding = acquire_funding(symbol, args.start, args.end)
+    funding = acquire_funding(symbol, raw.index.min(), args.end)
     source = funding.attrs.get("source", "unknown")
     gaps = funding.index.to_series().diff().dropna() if not funding.empty else pd.Series(dtype="timedelta64[ns]")
     max_gap = float(gaps.max().total_seconds() / 3600) if not gaps.empty else None
     if funding.empty or source not in OFFICIAL_FUNDING_SOURCES or max_gap is None or max_gap > 8.5:
-        raise RuntimeError(f"Official funding failed closed: source={source}, rows={len(funding)}, max_gap_hours={max_gap}")
-    quality = quality_report(raw, symbol, args.start, args.end)
+        raise RuntimeError(f"Official funding failed closed: source={source}, rows={len(funding)}, max_gap_hours={max_gap}, attrs={dict(funding.attrs)}")
+    quality = quality_report(raw, symbol, raw.index.min(), args.end)
     frames = {}
     for model in MODEL_PRIORITY:
         cfg = HEAD_CONFIGS[model]
@@ -330,6 +330,9 @@ def main():
     summary.update({
         "symbol": symbol, "model": "HEAD", "timeframe": TIMEFRAME,
         "start_inclusive": args.start, "end_exclusive": args.end,
+        "actual_candle_start": str(raw.index.min()),
+        "actual_candle_end_exclusive": str(raw.index.max() + pd.Timedelta(minutes=1)),
+        "listing_delay_days": round((raw.index.min() - pd.Timestamp(args.start, tz="UTC")).total_seconds() / 86400, 4),
         "fee_bps_per_side": args.fee_bps, "slippage_bps_per_side": args.slippage_bps,
         "funding_source": source, "funding_rows": int(len(funding)),
         "funding_max_gap_hours": max_gap, "candle_quality": quality,
