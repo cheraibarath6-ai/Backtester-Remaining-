@@ -1,4 +1,4 @@
-from crypto_research.combination_run import combination_profiles
+from crypto_research.eight_engine_combination_run import combination_profiles
 
 
 def test_combination_research_is_limited_to_evidence_led_models():
