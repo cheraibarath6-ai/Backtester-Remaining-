@@ -10,7 +10,20 @@ from . import data as _data
 
 def acquire_funding(symbol, start, end, root=Path("data")):
     base = _data.acquire_funding(symbol, start, end, root=root)
+    base_source = base.attrs.get("source", "unknown")
     missing_months = list(base.attrs.get("missing_archive_months", []))
+    # Never relabel third-party fallback rows as official merely because they
+    # are concatenated with official daily files. Keep only verified Binance
+    # monthly/API rows in an official-source result.
+    official_base_sources = {
+        "binance_vision_official_monthly_archive",
+        "binance_vision_archive_plus_official_api",
+        "binance_official_api",
+        "binance_vision_official_monthly_archive_partial",
+    }
+    if base_source not in official_base_sources:
+        base = pd.DataFrame(columns=["funding_rate", "mark_price"])
+        base.index = pd.DatetimeIndex([], tz="UTC", name="funding_time")
     if not missing_months:
         return base
 
