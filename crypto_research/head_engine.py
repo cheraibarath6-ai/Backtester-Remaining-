@@ -22,6 +22,7 @@ from .backtest import summarize
 START_DEFAULT = "2021-11-14"
 END_DEFAULT = "2026-11-14"
 TIMEFRAME = "4h"
+WARMUP_BARS = 130
 SYMBOLS = ("BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT",
            "DOGEUSDT", "ADAUSDT", "LINKUSDT", "LTCUSDT", "AVAXUSDT")
 # Priority is used only if opposite directions fire on the same completed bar.
@@ -128,6 +129,61 @@ def combine_model_signals(model_frames: dict[str, pd.DataFrame], timeframe: str 
         )
     out["signal"] = out.signal.astype(int)
     return out
+
+
+TRADE_COLUMNS = [
+    "symbol", "model", "timeframe", "side", "entry_time", "exit_time",
+    "entry", "exit", "raw_entry", "raw_exit", "gross_price_move_pct",
+    "gross_price_move_bps", "gross_return_pct", "fees_pct",
+    "slippage_cost_pct", "funding_cost_pct", "net_return_pct", "net_bps",
+    "net_R", "initial_stop", "stop", "target", "exit_reason", "source_model",
+    "trigger_sources", "trigger_count", "same_bar_conflict", "rr",
+    "hold_bars_limit", "trailing_atr_multiple", "holding_bars",
+    "holding_minutes",
+]
+
+TRIGGER_COLUMNS = [
+    "signal", "head_source", "trigger_sources", "trigger_count",
+    "same_bar_conflict", "stop", "target", "head_rr",
+    "head_hold_bars", "head_trailing_atr_multiple",
+]
+
+
+def _utc(value):
+    ts = pd.Timestamp(value)
+    return ts.tz_localize("UTC") if ts.tzinfo is None else ts.tz_convert("UTC")
+
+
+def batch_history_start(score_start, warmup_bars=WARMUP_BARS):
+    """Fetch enough preceding 4h bars to warm frozen indicators and carry positions."""
+    if warmup_bars < 0:
+        raise ValueError("warmup_bars must be non-negative")
+    requested_start = _utc(START_DEFAULT)
+    score_start = _utc(score_start)
+    return max(requested_start, score_start - pd.Timedelta(hours=4 * warmup_bars))
+
+
+def scope_batch_trades(trades, score_start, end):
+    """Assign each completed trade to one batch by its exit-bar close time.
+
+    The interval is (score_start, end], so a trade exiting exactly on a
+    boundary is counted in the preceding batch only. A pre-window DATA_GAP
+    closure is retained as an audit row when a position crosses into a gap.
+    """
+    if trades.empty:
+        return trades.copy()
+    start_ts, end_ts = _utc(score_start), _utc(end)
+    exits = pd.to_datetime(trades.exit_time, utc=True)
+    entries = pd.to_datetime(trades.entry_time, utc=True)
+    mask = (exits > start_ts) & (exits <= end_ts)
+    if "exit_reason" in trades:
+        pre_window_gap = (
+            trades.exit_reason.eq("DATA_GAP")
+            & (entries < start_ts)
+            & (exits <= start_ts)
+        )
+        mask |= pre_window_gap
+    return trades.loc[mask].copy()
 
 
 def run_head_backtest(bars, funding, symbol, timeframe="4h",
@@ -297,25 +353,78 @@ def run_head_backtest(bars, funding, symbol, timeframe="4h",
 
 def main():
     parser = argparse.ArgumentParser(description="HEAD OR-trigger engine, five-year crypto futures backtest")
-    parser.add_argument("--start", default=START_DEFAULT)
-    parser.add_argument("--end", default=END_DEFAULT)
+    parser.add_argument("--start", default=START_DEFAULT, help="Scoring-window start, inclusive UTC")
+    parser.add_argument("--end", default=END_DEFAULT, help="Scoring-window end, exclusive UTC")
+    parser.add_argument("--warmup-bars", type=int, default=WARMUP_BARS)
     parser.add_argument("--symbol", required=True, choices=SYMBOLS)
     parser.add_argument("--fee-bps", type=float, default=5.0)
     parser.add_argument("--slippage-bps", type=float, default=2.0)
     parser.add_argument("--out", default="head_artifacts")
     args = parser.parse_args()
-    if pd.Timestamp(args.end) <= pd.Timestamp(args.start):
+    score_start, end_ts = _utc(args.start), _utc(args.end)
+    if end_ts <= score_start:
         parser.error("--end must be later than --start")
-    out = Path(args.out); out.mkdir(parents=True, exist_ok=True)
+    if args.warmup_bars < 0:
+        parser.error("--warmup-bars must be non-negative")
+
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
     symbol = args.symbol.upper()
-    print(f"HEAD START {symbol} {args.start}..{args.end}", flush=True)
-    raw = acquire_klines(symbol, args.start, args.end)
-    funding = acquire_funding(symbol, raw.index.min(), args.end)
+    history_start = batch_history_start(score_start, args.warmup_bars)
+    print(
+        f"HEAD START {symbol} score={score_start}..{end_ts} "
+        f"history={history_start} warmup_bars={args.warmup_bars}",
+        flush=True,
+    )
+
+    raw = acquire_klines(symbol, history_start, end_ts)
+    if raw.empty:
+        quality = quality_report(raw, symbol, score_start, end_ts)
+        trades = pd.DataFrame(columns=TRADE_COLUMNS)
+        summary = summarize(trades)
+        summary.update({
+            "status": "NO_OFFICIAL_CANDLE_DATA_IN_BATCH",
+            "symbol": symbol, "model": "HEAD", "timeframe": TIMEFRAME,
+            "start_inclusive": args.start, "end_exclusive": args.end,
+            "history_start": str(history_start), "warmup_bars": args.warmup_bars,
+            "actual_candle_start": None, "actual_candle_end_exclusive": None,
+            "listing_delay_days": None,
+            "fee_bps_per_side": args.fee_bps,
+            "slippage_bps_per_side": args.slippage_bps,
+            "funding_source": "not_applicable_no_official_candle_data",
+            "funding_rows": 0, "funding_actual_start": None,
+            "funding_actual_end": None, "funding_first_gap_hours": None,
+            "funding_max_gap_hours": None, "funding_last_gap_hours": None,
+            "candle_quality": quality,
+            "model_trigger_bars": {m: 0 for m in MODEL_PRIORITY},
+            "head_trigger_bars": 0, "conflict_bars": 0,
+            "multi_trigger_bars": 0, "valid_trade_sources": {},
+        })
+        audit = pd.DataFrame(columns=TRIGGER_COLUMNS)
+        audit.index = pd.DatetimeIndex([], tz="UTC", name="bar_close_time")
+        (out / f"{symbol}_summary.json").write_text(
+            json.dumps(summary, indent=2, default=str)
+        )
+        trades.to_csv(out / f"{symbol}_trades.csv", index=False)
+        audit.to_csv(out / f"{symbol}_trigger_audit.csv")
+        print(f"HEAD NO CANDLE DATA {symbol} {args.start}..{args.end}", flush=True)
+        return
+
+    funding = acquire_funding(symbol, raw.index.min(), end_ts)
     source = funding.attrs.get("source", "unknown")
-    gaps = funding.index.to_series().diff().dropna() if not funding.empty else pd.Series(dtype="timedelta64[ns]")
+    gaps = (
+        funding.index.to_series().diff().dropna()
+        if not funding.empty else pd.Series(dtype="timedelta64[ns]")
+    )
     max_gap = float(gaps.max().total_seconds() / 3600) if not gaps.empty else None
-    first_gap = float((funding.index.min() - raw.index.min()).total_seconds() / 3600) if not funding.empty else None
-    last_gap = float((pd.Timestamp(args.end, tz="UTC") - funding.index.max()).total_seconds() / 3600) if not funding.empty else None
+    first_gap = (
+        float((funding.index.min() - raw.index.min()).total_seconds() / 3600)
+        if not funding.empty else None
+    )
+    last_gap = (
+        float((end_ts - funding.index.max()).total_seconds() / 3600)
+        if not funding.empty else None
+    )
     if (funding.empty or source not in OFFICIAL_FUNDING_SOURCES or max_gap is None
             or max_gap > 8.5 or first_gap is None or first_gap < 0 or first_gap > 8.5
             or last_gap is None or last_gap < 0 or last_gap > 8.5):
@@ -324,44 +433,113 @@ def main():
             f"first_gap_hours={first_gap}, max_gap_hours={max_gap}, last_gap_hours={last_gap}, "
             f"attrs={dict(funding.attrs)}"
         )
-    quality = quality_report(raw, symbol, raw.index.min(), args.end)
+
+    score_raw = raw.loc[(raw.index >= score_start) & (raw.index < end_ts)]
+    quality = quality_report(score_raw, symbol, score_start, end_ts)
+    score_funding = funding.loc[
+        (funding.index >= score_start) & (funding.index < end_ts)
+    ]
+    score_funding_gaps = score_funding.index.to_series().diff().dropna()
+    score_funding_max_gap = (
+        float(score_funding_gaps.max().total_seconds() / 3600)
+        if not score_funding_gaps.empty else None
+    )
+    score_funding_first_gap = (
+        float((score_funding.index.min() - score_start).total_seconds() / 3600)
+        if not score_funding.empty else None
+    )
+    score_funding_last_gap = (
+        float((end_ts - score_funding.index.max()).total_seconds() / 3600)
+        if not score_funding.empty else None
+    )
+
     frames = {}
     for model in MODEL_PRIORITY:
         cfg = HEAD_CONFIGS[model]
-        frames[model] = make_independent_signals(raw, model, TIMEFRAME, parameters=cfg["parameters"])
-        print(f"MODEL SIGNALS {model}: {int(frames[model].signal.ne(0).sum())}", flush=True)
+        frames[model] = make_independent_signals(
+            raw, model, TIMEFRAME, parameters=cfg["parameters"]
+        )
+        print(
+            f"MODEL SIGNALS {model}: "
+            f"{int((frames[model].signal.ne(0) & (frames[model].index >= score_start) "
+            f"& (frames[model].index < end_ts)).sum())}",
+            flush=True,
+        )
     combined = combine_model_signals(frames, TIMEFRAME)
-    trades = run_head_backtest(combined, funding, symbol, TIMEFRAME,
-                               args.fee_bps, args.slippage_bps, args.end)
-    valid = trades.loc[~trades.exit_reason.isin(["DATA_GAP", "END_OF_SAMPLE"])].copy() if not trades.empty else trades.copy()
+    all_trades = run_head_backtest(
+        combined, funding, symbol, TIMEFRAME,
+        args.fee_bps, args.slippage_bps, args.end
+    )
+    trades = scope_batch_trades(all_trades, score_start, end_ts)
+    if trades.empty:
+        trades = pd.DataFrame(columns=TRADE_COLUMNS)
+    valid = (
+        trades.loc[~trades.exit_reason.isin(["DATA_GAP", "END_OF_SAMPLE"])].copy()
+        if not trades.empty else trades.copy()
+    )
     summary = summarize(trades)
+    in_score_window = (combined.index >= score_start) & (combined.index < end_ts)
+    model_trigger_bars = {
+        m: int((
+            frames[m].signal.ne(0)
+            & (frames[m].index >= score_start)
+            & (frames[m].index < end_ts)
+        ).sum())
+        for m in MODEL_PRIORITY
+    }
+    audit = combined.loc[
+        in_score_window & combined.signal.ne(0), TRIGGER_COLUMNS
+    ].copy()
+    actual_start = str(score_raw.index.min()) if not score_raw.empty else None
+    actual_end = (
+        str(score_raw.index.max() + pd.Timedelta(minutes=1))
+        if not score_raw.empty else None
+    )
+    listing_delay = (
+        round(max(0.0, (score_raw.index.min() - _utc(START_DEFAULT)).total_seconds() / 86400), 4)
+        if not score_raw.empty else None
+    )
+    status = (
+        "NO_CANDLE_DATA_IN_BATCH" if score_raw.empty
+        else "PARTIAL_CANDLE_COVERAGE" if quality.get("coverage_pct", 0) < 100
+        else "OK"
+    )
     summary.update({
+        "status": status,
         "symbol": symbol, "model": "HEAD", "timeframe": TIMEFRAME,
         "start_inclusive": args.start, "end_exclusive": args.end,
-        "actual_candle_start": str(raw.index.min()),
-        "actual_candle_end_exclusive": str(raw.index.max() + pd.Timedelta(minutes=1)),
-        "listing_delay_days": round((raw.index.min() - pd.Timestamp(args.start, tz="UTC")).total_seconds() / 86400, 4),
-        "fee_bps_per_side": args.fee_bps, "slippage_bps_per_side": args.slippage_bps,
-        "funding_source": source, "funding_rows": int(len(funding)),
-        "funding_actual_start": str(funding.index.min()),
-        "funding_actual_end": str(funding.index.max()),
-        "funding_first_gap_hours": first_gap, "funding_max_gap_hours": max_gap,
-        "funding_last_gap_hours": last_gap, "candle_quality": quality,
-        "model_trigger_bars": {m: int(frames[m].signal.ne(0).sum()) for m in MODEL_PRIORITY},
-        "head_trigger_bars": int(combined.signal.ne(0).sum()),
-        "conflict_bars": int(combined.same_bar_conflict.sum()),
-        "multi_trigger_bars": int((combined.trigger_count > 1).sum()),
+        "history_start": str(history_start), "warmup_bars": args.warmup_bars,
+        "actual_candle_start": actual_start,
+        "actual_candle_end_exclusive": actual_end,
+        "listing_delay_days": listing_delay,
+        "fee_bps_per_side": args.fee_bps,
+        "slippage_bps_per_side": args.slippage_bps,
+        "funding_source": source,
+        "funding_rows": int(len(score_funding)),
+        "funding_actual_start": str(score_funding.index.min()) if not score_funding.empty else None,
+        "funding_actual_end": str(score_funding.index.max()) if not score_funding.empty else None,
+        "funding_first_gap_hours": score_funding_first_gap,
+        "funding_max_gap_hours": score_funding_max_gap,
+        "funding_last_gap_hours": score_funding_last_gap,
+        "full_history_funding_max_gap_hours": max_gap,
+        "candle_quality": quality,
+        "model_trigger_bars": model_trigger_bars,
+        "head_trigger_bars": int(audit.shape[0]),
+        "conflict_bars": int(audit.same_bar_conflict.sum()) if not audit.empty else 0,
+        "multi_trigger_bars": int((audit.trigger_count > 1).sum()) if not audit.empty else 0,
         "valid_trade_sources": valid.source_model.value_counts().to_dict() if not valid.empty else {},
     })
-    (out / f"{symbol}_summary.json").write_text(json.dumps(summary, indent=2, default=str))
+    (out / f"{symbol}_summary.json").write_text(
+        json.dumps(summary, indent=2, default=str)
+    )
     trades.to_csv(out / f"{symbol}_trades.csv", index=False)
-    combined.loc[combined.signal.ne(0), [
-        "signal", "head_source", "trigger_sources", "trigger_count",
-        "same_bar_conflict", "stop", "target", "head_rr", "head_hold_bars",
-        "head_trailing_atr_multiple"
-    ]].to_csv(out / f"{symbol}_trigger_audit.csv")
-    print(f"HEAD END {symbol}: trades={summary['trades']} PF={summary['profit_factor']} net_bps={summary['net_bps']}", flush=True)
-
+    audit.to_csv(out / f"{symbol}_trigger_audit.csv")
+    print(
+        f"HEAD END {symbol}: trades={summary['trades']} "
+        f"PF={summary['profit_factor']} net_bps={summary['net_bps']} "
+        f"coverage={quality.get('coverage_pct')}%",
+        flush=True,
+    )
 
 if __name__ == "__main__":
     main()
