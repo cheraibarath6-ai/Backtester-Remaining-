@@ -293,11 +293,32 @@ jobs:
           NEXT_START: ${{ steps.next.outputs.start }}
           NEXT_END: ${{ steps.next.outputs.end }}
           TARGET_REF: ${{ github.ref_name }}
+          GH_REPOSITORY: ${{ github.repository }}
         run: |
-          curl --fail --silent --show-error \\
-            --request POST \\
-            --header "Accept: application/vnd.github+json" \\
-            --header "Authorization: Bearer ${GH_TOKEN}" \\
-            --header "X-GitHub-Api-Version: 2022-11-28" \\
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/head-batch2-resume.yml/dispatches" \\
-            --data "{\\"ref\\":\\"${TARGET_REF}\\",\\"inputs\\":{\\"start\\":\\"${NEXT_START}\\",\\"end\\":\\"${NEXT_END}\\"}}"
+          python - <<'PY'
+          import os
+          import requests
+
+          url = f"https://api.github.com/repos/{os.environ['GH_REPOSITORY']}/actions/workflows/head-batch2-resume.yml/dispatches"
+          response = requests.post(
+              url,
+              headers={
+                  "Accept": "application/vnd.github+json",
+                  "Authorization": f"Bearer {os.environ['GH_TOKEN']}",
+                  "X-GitHub-Api-Version": "2022-11-28",
+              },
+              json={
+                  "ref": os.environ["TARGET_REF"],
+                  "inputs": {
+                      "start": os.environ["NEXT_START"],
+                      "end": os.environ["NEXT_END"],
+                  },
+              },
+              timeout=60,
+          )
+          response.raise_for_status()
+          print(
+              f"Dispatched HEAD batch {os.environ['NEXT_START']}.."
+              f"{os.environ['NEXT_END']} after successful aggregation"
+          )
+          PY
