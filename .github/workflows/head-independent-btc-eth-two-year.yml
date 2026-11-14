@@ -1,0 +1,49 @@
+name: Independent M6-M15 BTC ETH two-year backtest
+
+on:
+  push:
+    branches: [research/funding-notional-audit-v2]
+    paths:
+      - ".github/workflows/head-independent-btc-eth-two-year.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: head-independent-btc-eth-two-year
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    name: Independent models / ${{ matrix.symbol }} / 4h / two years
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        symbol: [BTCUSDT, ETHUSDT]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Validate and run five independent frozen models
+        run: |
+          python -m compileall -q crypto_research/independent_five_model_audit.py
+          python -m pytest -q tests/test_head_engine.py tests/test_data_months.py tests/test_improvement_run.py
+          python -m crypto_research.independent_five_model_audit \
+            --start "2024-01-01" --end "2026-01-01" \
+            --warmup-bars 300 --symbol "${{ matrix.symbol }}" \
+            --fee-bps 5 --slippage-bps 2 --out independent_audit
+      - name: Upload two-year standalone model results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: head-independent-two-year-${{ matrix.symbol }}
+          path: independent_audit/
+          if-no-files-found: warn
+          retention-days: 90
