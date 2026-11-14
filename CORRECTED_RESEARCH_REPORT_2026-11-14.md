@@ -361,3 +361,19 @@ The M11 signal selector now accepts only contract/base-denominated fields (`sum_
 **Consequences:** all previously reported M11 screen, sensitivity, combination, cost-stress and partial walk-forward figures used quote-value OI and are invalid for M11 selection. They are retained only as superseded audit history. M6 and the price-only M7-M10/M12-M15 results are unaffected by this specific field-selection correction. The next seven-symbol independent screen, M6/M11 sensitivity, combination, cost-stress and walk-forward reruns must use the corrected contract-count OI series. No M11 model decision is made from the superseded figures.
 
 The new public-source audit is documented in `RESEARCH_SOURCES.md`. No external code was copied. M3 remains untouched.
+
+
+## Corrected contract-OI rerun status — 14 November 2026, 02:40 UTC
+
+The M11 contract-count field fix is on commit `83bc7daa2579df348cefb0d2232f6fea011e2db1`. The new full regression workflow [43546552298](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43546552298) completed successfully; the inspected job log confirms **79 passed in 1.07s**, including the new quote-only rejection and base-OI precedence tests.
+
+The corrected reruns are now active on that commit:
+
+- [Independent Core Engine Discovery — 43546549065](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43546549065): BTC and ETH executing; five symbols queued.
+- [M6/M11 one-factor sensitivity — 43546549082](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43546549082): BTC and ETH executing; five symbols queued.
+- [M6/M11 full OHLC cost stress — 43546552307](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43546552307): BTC and ETH executing; five symbols queued.
+- [M6/M11 combinations plus expanding walk-forward — 43546552311](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43546552311): BTC and ETH combination jobs executing; five symbols queued. Walk-forward is downstream of the full combination matrix.
+
+Two duplicate starts created during the push were cancelled; the run IDs above are the current surviving attempts. Earlier M11 artifacts are not used for selection. M6 and other price-only model results from the previous completed screen remain valid for their own streams, but the independent screen is being rerun so the combined report has a consistent current revision.
+
+No corrected M11 performance result is available yet. The new M11 results must use Binance Vision `sum_open_interest` contract/base quantity, not `sum_open_interest_value` quote notional. The November forward holdout remains unscored until official funding data is available. No model is approved for live trading; M3 remains untouched.
