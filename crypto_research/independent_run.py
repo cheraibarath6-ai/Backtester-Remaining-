@@ -13,7 +13,7 @@ from .independent_models import INDEPENDENT_MODELS, make_independent_signals
 from .metrics import acquire_open_interest, metrics_quality_report
 from .pfi_stage4 import PROFILES
 
-ALL_MODELS = ("M1", "M2", "M4", "M5", *INDEPENDENT_MODELS)
+ALL_MODELS = ("M6", "M7", "M8", "M10", "M12", "M13", "M14", "M15")
 TIMEFRAMES = ("5m", "15m", "1h", "4h")
 
 
