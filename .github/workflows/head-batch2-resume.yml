@@ -322,3 +322,4 @@ jobs:
               f"{os.environ['NEXT_END']} after successful aggregation"
           )
           PY
+# Manual continuation marker: dispatch batch 5 after verified cumulative batch 4.
