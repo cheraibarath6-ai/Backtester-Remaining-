@@ -2,20 +2,7 @@ name: Independent M6-M11 Full Cost Stress Research
 
 on:
   push:
-    branches: [main]
-    paths:
-      - ".github/workflows/m6-m11-cost-stress.yml"
-      - "crypto_research/cost_stress_run.py"
-      - "crypto_research/aggregate_cost_stress.py"
-      - "tests/test_cost_stress.py"
-      - "tests/test_combinations.py"
-      - "tests/test_walkforward.py"
-      - "crypto_research/backtest.py"
-      - "crypto_research/metrics.py"
-      - "crypto_research/combination_run.py"
-      - "crypto_research/independent_models.py"
-  pull_request:
-    branches: [main]
+    branches: [research/funding-notional-audit-v2]
     paths:
       - ".github/workflows/m6-m11-cost-stress.yml"
       - "crypto_research/cost_stress_run.py"
