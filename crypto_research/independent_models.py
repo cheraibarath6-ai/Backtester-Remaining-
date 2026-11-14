@@ -192,9 +192,13 @@ def make_independent_signals(
     elif model == "M9":
         crossed_up = (d.close > d.session_vwap) & (d.close.shift(1) <= d.session_vwap.shift(1))
         crossed_down = (d.close < d.session_vwap) & (d.close.shift(1) >= d.session_vwap.shift(1))
-        long = crossed_up & (d.taker_ratio >= 0.58) & (d.volume_ratio >= 1.2) & (d.adx >= 18)
-        short = crossed_down & (d.taker_ratio <= 0.42) & (d.volume_ratio >= 1.2) & (d.adx >= 18)
-        _set_atr_stops(d, long, short, 1.75)
+        taker_min = float(parameters.get("taker_min", 0.58))
+        volume_min = float(parameters.get("volume_ratio_min", 1.2))
+        adx_min = float(parameters.get("adx_min", 18.0))
+        stop_multiple = float(parameters.get("stop_atr", 1.75))
+        long = crossed_up & (d.taker_ratio >= taker_min) & (d.volume_ratio >= volume_min) & (d.adx >= adx_min)
+        short = crossed_down & (d.taker_ratio <= 1.0 - taker_min) & (d.volume_ratio >= volume_min) & (d.adx >= adx_min)
+        _set_atr_stops(d, long, short, stop_multiple)
 
     elif model in ("M10", "M13"):
         if benchmark_raw is None:
