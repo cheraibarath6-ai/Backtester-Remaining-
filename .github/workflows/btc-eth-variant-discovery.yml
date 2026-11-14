@@ -1,0 +1,52 @@
+name: BTC ETH independent variant discovery with untouched OOS
+
+on:
+  push:
+    branches: [research/btc-eth-variant-discovery]
+    paths:
+      - ".github/workflows/btc-eth-variant-discovery.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: btc-eth-variant-discovery
+  cancel-in-progress: false
+
+jobs:
+  discover:
+    name: 1h variants / \${{ matrix.symbol }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        symbol: [BTCUSDT, ETHUSDT]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Compile and run tests
+        run: |
+          python -m compileall -q crypto_research
+          python -m pytest -q tests/test_head_engine.py tests/test_data_months.py tests/test_improvement_run.py
+      - name: Run independent 1h variant grid with 2025 holdout
+        run: |
+          python -m crypto_research.variant_discovery \
+            --symbol "\${{ matrix.symbol }}" \
+            --start "2024-01-01" --split "2025-01-01" --end "2026-01-01" \
+            --warmup-hours 1200 --fee-bps 5 --slippage-bps 2 \
+            --out variant_discovery
+      - name: Upload complete research tables
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: btc-eth-variant-discovery-\${{ matrix.symbol }}
+          path: variant_discovery/
+          if-no-files-found: warn
+          retention-days: 90
