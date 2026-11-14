@@ -314,11 +314,17 @@ def main():
         daily_gap_fill_successful_days = set()
         daily_gap_fill_missing_days = set()
         daily_gap_fill_errors = {}
+        warmup_bar_counts = []
+        history_starts = []
         conflict_bars = 0
         multi_trigger_bars = 0
         head_trigger_bars = 0
         for row in group:
             candle_quality = row.get("candle_quality") or {}
+            if row.get("warmup_bars") is not None:
+                warmup_bar_counts.append(int(row.get("warmup_bars")))
+            if row.get("history_start"):
+                history_starts.append(str(row.get("history_start")))
             candle_source = candle_quality.get("source")
             if candle_source:
                 candle_sources.add(str(candle_source))
@@ -393,6 +399,9 @@ def main():
             "daily_gap_fill_successful_days": sorted(daily_gap_fill_successful_days),
             "daily_gap_fill_missing_days": sorted(daily_gap_fill_missing_days),
             "daily_gap_fill_errors": daily_gap_fill_errors,
+            "warmup_bars_min": min(warmup_bar_counts) if warmup_bar_counts else None,
+            "warmup_bars_max": max(warmup_bar_counts) if warmup_bar_counts else None,
+            "history_start_actual": min(history_starts) if history_starts else None,
             "funding_source": funding_source,
             "funding_rows": funding_rows,
             "funding_actual_start": min(funding_starts) if funding_starts else None,
@@ -413,6 +422,9 @@ def main():
             "daily_gap_fill_successful_days_json": json.dumps(sorted(daily_gap_fill_successful_days)),
             "daily_gap_fill_missing_days_json": json.dumps(sorted(daily_gap_fill_missing_days)),
             "daily_gap_fill_errors_json": json.dumps(daily_gap_fill_errors, separators=(",", ":")),
+            "warmup_bars_min": min(warmup_bar_counts) if warmup_bar_counts else None,
+            "warmup_bars_max": max(warmup_bar_counts) if warmup_bar_counts else None,
+            "history_start_actual": min(history_starts) if history_starts else None,
             "funding_source": funding_source,
             "funding_rows": funding_rows,
             "funding_actual_start": min(funding_starts) if funding_starts else None,
@@ -519,8 +531,8 @@ def main():
         "",
         "## Official candle and funding coverage",
         "",
-        "| Symbol | Candle source | Candle coverage | Daily archive missing days | Funding source | Funding rows | Funding actual range | Funding max gap (h) | DATA_GAP | END_OF_SAMPLE |",
-        "|---|---|---:|---|---|---:|---|---:|---:|---:|",
+        "| Symbol | Warmup bars min/max | History start | Candle source | Candle coverage | Daily archive missing days | Funding source | Funding rows | Funding actual range | Funding max gap (h) | DATA_GAP | END_OF_SAMPLE |",
+        "|---|---:|---|---|---:|---|---|---:|---|---:|---:|---:|",
     ]
     for row in per_symbol_rows:
         funding_range = (
@@ -529,7 +541,9 @@ def main():
             else "No official funding rows"
         )
         lines.append(
-            f"| {row['symbol']} | {row['candle_source']} | "
+            f"| {row['symbol']} | "
+            f"{row['warmup_bars_min']}/{row['warmup_bars_max']} | "
+            f"{row['history_start_actual']} | {row['candle_source']} | "
             f"{row['requested_window_coverage_pct']}% | "
             f"{'; '.join(row['daily_gap_fill_missing_days']) or 'None'} | "
             f"{row['funding_source']} | {row['funding_rows']} | {funding_range} | "
