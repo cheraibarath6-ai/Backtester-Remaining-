@@ -127,6 +127,9 @@ def read_zip(path: Path):
 
 def acquire_klines(symbol, start, end, root=Path("data")):
     parts = []
+    daily_archives_used = set()
+    daily_gap_fill_attempted = set()
+    daily_gap_fill_errors = {}
     start_ts = pd.Timestamp(start)
     end_ts = pd.Timestamp(end)
     start_ts = start_ts.tz_localize("UTC") if start_ts.tzinfo is None else start_ts.tz_convert("UTC")
@@ -140,8 +143,7 @@ def acquire_klines(symbol, start, end, root=Path("data")):
             parts.append(read_zip(path))
             continue
 
-        # Binance publishes daily archives for an incomplete current month.
-        # Use them only when the corresponding monthly archive is unavailable.
+        # If the monthly archive is unavailable, use official daily archives.
         month_end = month + pd.offsets.MonthBegin(1)
         day_start = max(month.normalize(), start_ts.normalize())
         day_end = min(month_end, end_ts)
@@ -149,13 +151,18 @@ def acquire_klines(symbol, start, end, root=Path("data")):
             ymd = day.strftime("%Y-%m-%d")
             daily_name = f"{symbol}-1m-{ymd}.zip"
             daily_url = f"{BASE.replace('/monthly', '/daily')}/klines/{symbol}/1m/{daily_name}"
-            daily_path = get_zip(
-                daily_url,
-                root / "raw" / "klines_daily" / symbol / daily_name,
-                verify_checksum=True,
-            )
-            if daily_path:
-                parts.append(read_zip(daily_path))
+            try:
+                daily_path = get_zip(
+                    daily_url,
+                    root / "raw" / "klines_daily" / symbol / daily_name,
+                    verify_checksum=True,
+                )
+                if daily_path:
+                    parts.append(read_zip(daily_path))
+                    daily_archives_used.add(ymd)
+            except Exception as error:
+                daily_gap_fill_errors[ymd] = f"{type(error).__name__}: {error}"
+
     if not parts:
         # A 404 for every official archive in this date range can mean the
         # USD-M contract was not yet listed. Return an explicit empty frame so
@@ -164,6 +171,9 @@ def acquire_klines(symbol, start, end, root=Path("data")):
         data.index = pd.DatetimeIndex([], tz="UTC", name="open_time")
         data.attrs["duplicate_timestamps_before_dedup"] = 0
         data.attrs["source"] = "binance_vision_official_usdm_1m"
+        data.attrs["daily_gap_fill_attempted_days"] = []
+        data.attrs["daily_gap_fill_successful_days"] = []
+        data.attrs["daily_gap_fill_errors"] = {}
         return data
 
     data = pd.concat(parts).sort_index()
@@ -173,10 +183,56 @@ def acquire_klines(symbol, start, end, root=Path("data")):
         (data.index >= _utc_timestamp(start))
         & (data.index < _utc_timestamp(end))
     ]
-    data.attrs["duplicate_timestamps_before_dedup"] = duplicate_count
-    data.attrs["source"] = "binance_vision_official_usdm_1m"
-    return data
 
+    # A verified monthly file can still contain missing dates. Check its
+    # minute grid and try the corresponding official daily archive for only
+    # those days; never fill a gap from a third-party source.
+    if not data.empty:
+        expected = pd.date_range(
+            start_ts, end_ts - pd.Timedelta(minutes=1), freq="1min"
+        )
+        missing_index = expected.difference(data.index)
+        missing_days = sorted(set(ts.normalize() for ts in missing_index))
+        daily_parts = []
+        for day in missing_days:
+            ymd = day.strftime("%Y-%m-%d")
+            if ymd in daily_archives_used:
+                continue
+            daily_gap_fill_attempted.add(ymd)
+            daily_name = f"{symbol}-1m-{ymd}.zip"
+            daily_url = f"{BASE.replace('/monthly', '/daily')}/klines/{symbol}/1m/{daily_name}"
+            try:
+                daily_path = get_zip(
+                    daily_url,
+                    root / "raw" / "klines_daily" / symbol / daily_name,
+                    verify_checksum=True,
+                )
+                if daily_path:
+                    daily = read_zip(daily_path)
+                    if not daily.empty:
+                        daily_parts.append(daily)
+                        daily_archives_used.add(ymd)
+            except Exception as error:
+                daily_gap_fill_errors[ymd] = f"{type(error).__name__}: {error}"
+
+        if daily_parts:
+            merged = pd.concat([data, *daily_parts]).sort_index()
+            duplicate_count += int(merged.index.duplicated().sum())
+            data = merged[~merged.index.duplicated(keep="last")]
+            data = data.loc[
+                (data.index >= _utc_timestamp(start))
+                & (data.index < _utc_timestamp(end))
+            ]
+
+    data.attrs["duplicate_timestamps_before_dedup"] = duplicate_count
+    data.attrs["source"] = (
+        "binance_vision_official_usdm_1m_monthly_plus_daily"
+        if daily_archives_used else "binance_vision_official_usdm_1m_monthly"
+    )
+    data.attrs["daily_gap_fill_attempted_days"] = sorted(daily_gap_fill_attempted)
+    data.attrs["daily_gap_fill_successful_days"] = sorted(daily_archives_used)
+    data.attrs["daily_gap_fill_errors"] = daily_gap_fill_errors
+    return data
 
 def _read_funding_zip(path: Path) -> pd.DataFrame:
     with zipfile.ZipFile(path) as archive:
