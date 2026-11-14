@@ -3,6 +3,8 @@ on:
   push:
     branches: [research/funding-notional-audit-v2]
     paths:
+      - "crypto_research/data.py"
+      - "crypto_research/funding_patch.py"
       - "crypto_research/head_engine.py"
       - "crypto_research/aggregate_head.py"
       - "tests/test_head_engine.py"
