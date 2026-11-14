@@ -421,12 +421,19 @@ def quality_report(data, symbol, start=None, end=None):
             expected_minutes = max(
                 0, int((expected_end - expected_start).total_seconds() // 60)
             )
+        missing_intervals = []
+        if expected_minutes:
+            missing_intervals.append({
+                "start": str(expected_start),
+                "end": str(expected_end - pd.Timedelta(minutes=1)),
+                "minutes": expected_minutes,
+            })
         return {
             "symbol": symbol, "rows": 0, "start": None, "end": None,
             "expected_minutes": expected_minutes,
             "missing_minutes": expected_minutes,
             "missing_interval_count": 1 if expected_minutes else 0,
-            "missing_intervals": [],
+            "missing_intervals": missing_intervals,
             "missing_intervals_truncated": False,
             "coverage_pct": 0.0,
             "duplicate_timestamps": int(data.attrs.get("duplicate_timestamps_before_dedup", 0)),
