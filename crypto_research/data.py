@@ -10,6 +10,11 @@ import pandas as pd
 import requests
 
 BASE = "https://data.binance.vision/data/futures/um/monthly"
+def _utc_timestamp(value):
+    ts = pd.Timestamp(value)
+    return ts.tz_localize("UTC") if ts.tzinfo is None else ts.tz_convert("UTC")
+
+
 COLS = [
     "open_time", "open", "high", "low", "close", "volume", "close_time",
     "quote_volume", "trades", "taker_buy_base", "taker_buy_quote", "ignore",
@@ -206,8 +211,8 @@ def _read_funding_zip(path: Path) -> pd.DataFrame:
 
 def _funding_from_official_api(symbol, start, end):
     url = "https://fapi.binance.com/fapi/v1/fundingRate"
-    cursor = int(pd.Timestamp(start, tz="UTC").timestamp() * 1000)
-    end_ms = int(pd.Timestamp(end, tz="UTC").timestamp() * 1000)
+    cursor = int(_utc_timestamp(start).timestamp() * 1000)
+    end_ms = int(_utc_timestamp(end).timestamp() * 1000)
     rows = []
     while cursor < end_ms:
         response = requests.get(
