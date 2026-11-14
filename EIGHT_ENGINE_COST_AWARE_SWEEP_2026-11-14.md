@@ -113,7 +113,7 @@ The 5/2 bps per-side fee/slippage schedule contributes about 14 bps per round tr
 - **Best balanced M8 candidate so far:** 48h hold. It retains 97.1% of baseline entries and improves full-period and 2025 validation net bps/PF. Its 2025 validation is strong, but 2026 retrospective is negative. M8 is therefore promising but not robustly selected.
 - **M15 ATR trailing 2.5** changes a negative baseline into a modest positive result with 91.8% entry retention. The 2025 PF is only 1.021 and the 2026 retrospective is weak; this is a tentative candidate, not a pass.
 - M10 and M14 have some positive full-period 4h variants, but their 2025 notional net-bps/PF validation is negative. M12's isolated 1h BREAKOUT_10 result has only PF 1.009 in validation while net-R remains negative and the full-period result is poor. M7 and M13 did not establish a profitable 4h baseline or a convincing one-factor improvement.
-- The M8 4h one-factor candidates and M6 4h RR/stop variants are the strongest candidates for controlled within-model combinations. The next run tests only M6, M8 and M15 at 4h; it does not combine different engines. The 2025 validation and 2026 retrospective remain separate from development selection.
+- The M6, M8 and M15 4h within-model combination run has now completed successfully across all seven symbols. Its detailed results, trade-retention counterfactuals and yearwise metrics are in [EIGHT_ENGINE_COMBINATION_RESULTS_2026-11-14.md](https://github.com/cheraibarath6-ai/Backtester-Remaining-/blob/research/funding-notional-audit-v2/EIGHT_ENGINE_COMBINATION_RESULTS_2026-11-14.md).
 - No engine is approved for live execution. The future forward holdout after 1 November 2026 is still required, along with cost stress, walk-forward and Monte Carlo checks on surviving candidates.
 
 
@@ -134,7 +134,7 @@ These counts and net bps exclude `DATA_GAP` and `END_OF_SAMPLE` records. The lar
 
 M6 RR 3.0 is consistent with this diagnosis: it reduces target exits from 186 to 78, but raises the time-exit contribution from about +63.8k to +150.2k bps while retaining 96.6% of baseline entry timestamps. M8 hold 48h increases target exits from 186 to 317 and raises the time-exit contribution from about +40.0k to +66.9k bps, while retaining 97.1% of baseline entries. These are model-specific exit effects, not cross-engine combinations.
 
-M7, M12 and M13 are not primarily failing because of the fixed 14 bps round-trip fee/slippage schedule: their stop-exit losses overwhelm the positive target/time exits. They need entry/stop logic diagnosis before more restrictive filters are considered. The current ledger does not yet record bar-by-bar MAE/MFE, so exact adverse/favourable excursion and stop-distance efficiency remain a diagnostic gap.
+M7, M12 and M13 are not primarily failing because of the fixed 14 bps round-trip fee/slippage schedule: their stop-exit losses overwhelm the positive target/time exits. They need entry/stop logic diagnosis before more restrictive filters are considered. The one-factor and combination ledgers did not yet record bar-by-bar MAE/MFE. A separate eight-engine cost-stress runner has now been added to calculate MAE/MFE from the complete underlying 1m path and leave incomplete paths unscored.
 
 ## 2026 retrospective audit for the leading one-factor candidates
 
@@ -154,3 +154,10 @@ These are completed entry cohorts from 1 January through 31 October 2026. They a
 | M15 ATR trail 2.5 | 289 | 0.725 | -14,129 | -23.054 |
 
 This weak 2026 cohort is why M8 is only a promising validation candidate, not a final selection. M6 RR 3.0 and stop 3.0 are close to flat in net bps but still negative in net-R. The future untouched forward holdout remains essential.
+
+
+## Combination run completion and next cost-stress stage
+
+The within-model combination workflow [43561784934](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43561784934) completed all seven symbol jobs and its aggregate job successfully. It tested M6, M8 and M15 independently at 4h. The full result and yearwise trade-count/PF/net-bps tables are in [EIGHT_ENGINE_COMBINATION_RESULTS_2026-11-14.md](https://github.com/cheraibarath6-ai/Backtester-Remaining-/blob/research/funding-notional-audit-v2/EIGHT_ENGINE_COMBINATION_RESULTS_2026-11-14.md).
+
+A new cost-stress workflow [43565159927](https://github.com/cheraibarath6-ai/Backtester-Remaining-/actions/runs/43565159927) has been triggered. It covers only M6, M7, M8, M10, M12, M13, M14 and M15, at 4h, with four re-executed fee/slippage scenarios (5/2, 7.5/3, 10/5 and 15/10 bps per side). It includes official funding checks, 1m-path MAE/MFE diagnostics, exit-reason breakdowns and a 500-resample contiguous-block bootstrap. The seven symbol jobs are in progress; no cost-stress results are claimed yet.
