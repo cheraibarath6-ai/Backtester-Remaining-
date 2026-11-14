@@ -15,6 +15,11 @@ COLS = [
     "quote_volume", "trades", "taker_buy_base", "taker_buy_quote", "ignore",
 ]
 
+def _utc_timestamp(value):
+    """Normalize strings and naive/aware datetime values to UTC timestamps."""
+    timestamp = pd.Timestamp(value)
+    return timestamp.tz_localize("UTC") if timestamp.tzinfo is None else timestamp.tz_convert("UTC")
+
 
 def months(start, end):
     """Return every UTC calendar month intersecting [start, end)."""
@@ -157,8 +162,8 @@ def acquire_klines(symbol, start, end, root=Path("data")):
     duplicate_count = int(data.index.duplicated().sum())
     data = data[~data.index.duplicated(keep="last")]
     data = data.loc[
-        (data.index >= pd.Timestamp(start, tz="UTC"))
-        & (data.index < pd.Timestamp(end, tz="UTC"))
+        (data.index >= _utc_timestamp(start))
+        & (data.index < _utc_timestamp(end))
     ]
     data.attrs["duplicate_timestamps_before_dedup"] = duplicate_count
     data.attrs["source"] = "binance_vision_official_usdm_1m"
