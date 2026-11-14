@@ -7,14 +7,24 @@ on:
       - research/funding-notional-audit-v2
     paths:
       - .github/workflows/head-batch2-resume.yml
+  workflow_dispatch:
+    inputs:
+      start:
+        description: Inclusive UTC scoring-window start for this batch
+        required: true
+        type: string
+      end:
+        description: Exclusive UTC scoring-window end for this batch
+        required: true
+        type: string
 
 permissions:
   contents: read
   actions: write
 
 env:
-  BATCH_START: ${{ github.event.head_commit.message == 'Run HEAD batch 1' && '2021-11-14' || github.event.head_commit.message == 'Run HEAD batch 2' && '2022-01-01' || github.event.head_commit.message == 'Run HEAD batch 3' && '2023-01-01' || github.event.head_commit.message == 'Run HEAD batch 4' && '2024-01-01' || github.event.head_commit.message == 'Run HEAD batch 5' && '2025-01-01' || github.event.head_commit.message == 'Run HEAD batch 6' && '2026-01-01' || github.event.head_commit.message == 'Aggregate HEAD batch 2' && '2022-01-01' }}
-  BATCH_END: ${{ github.event.head_commit.message == 'Run HEAD batch 1' && '2022-01-01' || github.event.head_commit.message == 'Run HEAD batch 2' && '2023-01-01' || github.event.head_commit.message == 'Run HEAD batch 3' && '2024-01-01' || github.event.head_commit.message == 'Run HEAD batch 4' && '2025-01-01' || github.event.head_commit.message == 'Run HEAD batch 5' && '2026-01-01' || github.event.head_commit.message == 'Run HEAD batch 6' && '2026-11-14' || github.event.head_commit.message == 'Aggregate HEAD batch 2' && '2023-01-01' }}
+  BATCH_START: ${{ github.event_name == 'workflow_dispatch' && inputs.start || (github.event.head_commit.message == 'Run HEAD batch 1' && '2021-11-14' || github.event.head_commit.message == 'Run HEAD batch 2' && '2022-01-01' || github.event.head_commit.message == 'Run HEAD batch 3' && '2023-01-01' || github.event.head_commit.message == 'Run HEAD batch 4' && '2024-01-01' || github.event.head_commit.message == 'Run HEAD batch 5' && '2025-01-01' || github.event.head_commit.message == 'Run HEAD batch 6' && '2026-01-01' || github.event.head_commit.message == 'Aggregate HEAD batch 2' && '2022-01-01') }}
+  BATCH_END: ${{ github.event_name == 'workflow_dispatch' && inputs.end || (github.event.head_commit.message == 'Run HEAD batch 1' && '2022-01-01' || github.event.head_commit.message == 'Run HEAD batch 2' && '2023-01-01' || github.event.head_commit.message == 'Run HEAD batch 3' && '2024-01-01' || github.event.head_commit.message == 'Run HEAD batch 4' && '2025-01-01' || github.event.head_commit.message == 'Run HEAD batch 5' && '2026-01-01' || github.event.head_commit.message == 'Run HEAD batch 6' && '2026-11-14' || github.event.head_commit.message == 'Aggregate HEAD batch 2' && '2023-01-01') }}
 
 concurrency:
   group: head-sequential-${{ github.ref }}-${{ github.event.head_commit.message }}
@@ -22,7 +32,7 @@ concurrency:
 
 jobs:
   backtest:
-    if: github.event.head_commit.message == 'Run HEAD batch 1' || github.event.head_commit.message == 'Run HEAD batch 2' || github.event.head_commit.message == 'Run HEAD batch 3' || github.event.head_commit.message == 'Run HEAD batch 4' || github.event.head_commit.message == 'Run HEAD batch 5' || github.event.head_commit.message == 'Run HEAD batch 6'
+    if: github.event_name == 'workflow_dispatch' || github.event.head_commit.message == 'Run HEAD batch 1' || github.event.head_commit.message == 'Run HEAD batch 2' || github.event.head_commit.message == 'Run HEAD batch 3' || github.event.head_commit.message == 'Run HEAD batch 4' || github.event.head_commit.message == 'Run HEAD batch 5' || github.event.head_commit.message == 'Run HEAD batch 6'
     name: HEAD / ${{ matrix.symbol }} / 4h
     runs-on: ubuntu-latest
     timeout-minutes: 360
@@ -68,7 +78,7 @@ jobs:
     name: Verify cumulative HEAD window
     runs-on: ubuntu-latest
     needs: backtest
-    if: always() && (github.event.head_commit.message == 'Run HEAD batch 1' || github.event.head_commit.message == 'Run HEAD batch 2' || github.event.head_commit.message == 'Run HEAD batch 3' || github.event.head_commit.message == 'Run HEAD batch 4' || github.event.head_commit.message == 'Run HEAD batch 5' || github.event.head_commit.message == 'Run HEAD batch 6' || github.event.head_commit.message == 'Aggregate HEAD batch 2')
+    if: always() && (github.event_name == 'workflow_dispatch' || github.event.head_commit.message == 'Run HEAD batch 1' || github.event.head_commit.message == 'Run HEAD batch 2' || github.event.head_commit.message == 'Run HEAD batch 3' || github.event.head_commit.message == 'Run HEAD batch 4' || github.event.head_commit.message == 'Run HEAD batch 5' || github.event.head_commit.message == 'Run HEAD batch 6' || github.event.head_commit.message == 'Aggregate HEAD batch 2')
     steps:
       - uses: actions/checkout@v4
         with:
@@ -249,3 +259,45 @@ jobs:
           path: head_results/
           if-no-files-found: warn
           retention-days: 90
+
+  continue:
+    name: Dispatch next contiguous annual HEAD batch
+    runs-on: ubuntu-latest
+    needs: aggregate
+    if: needs.aggregate.result == 'success' && github.event.head_commit.message != 'Run HEAD batch 6' && inputs.end != '2026-11-14'
+    steps:
+      - name: Calculate next date window
+        id: next
+        env:
+          CURRENT_END: ${{ env.BATCH_END }}
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import os
+          from datetime import date
+          current = date.fromisoformat(os.environ["CURRENT_END"])
+          final = date(2026, 11, 14)
+          if current >= final:
+              print("has_next=false")
+          else:
+              next_end = current.replace(year=current.year + 1)
+              if next_end > final:
+                  next_end = final
+              print("has_next=true")
+              print(f"start={current.isoformat()}")
+              print(f"end={next_end.isoformat()}")
+          PY
+      - name: Dispatch next batch after successful cumulative aggregation
+        if: steps.next.outputs.has_next == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEXT_START: ${{ steps.next.outputs.start }}
+          NEXT_END: ${{ steps.next.outputs.end }}
+          TARGET_REF: ${{ github.ref_name }}
+        run: |
+          curl --fail --silent --show-error \\
+            --request POST \\
+            --header "Accept: application/vnd.github+json" \\
+            --header "Authorization: Bearer ${GH_TOKEN}" \\
+            --header "X-GitHub-Api-Version: 2022-11-28" \\
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/head-batch2-resume.yml/dispatches" \\
+            --data "{\\"ref\\":\\"${TARGET_REF}\\",\\"inputs\\":{\\"start\\":\\"${NEXT_START}\\",\\"end\\":\\"${NEXT_END}\\"}}"
