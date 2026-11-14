@@ -251,3 +251,44 @@ def test_m11_does_not_calculate_oi_or_price_change_across_a_data_gap():
     )
     assert signals.data_segment.nunique() == 2
     assert signals.loc[first_post_gap:, "signal"].eq(0).all()
+
+
+def test_m11_rejects_stale_oi_snapshots_on_slow_timeframes(monkeypatch):
+    import crypto_research.independent_models as models
+
+    index = pd.date_range("2024-01-01", periods=20, freq="4h", tz="UTC")
+    close = 100.0 * np.power(1.01, np.arange(len(index)))
+    bars = pd.DataFrame({
+        "open": close / 1.01,
+        "high": close * 1.001,
+        "low": close * 0.999,
+        "close": close,
+        "volume": np.full(len(index), 100.0),
+        "atr": np.full(len(index), 1.0),
+        "taker_ratio": np.full(len(index), 0.60),
+        "data_segment": np.zeros(len(index), dtype=int),
+    }, index=index)
+
+    def fake_prepare(raw, timeframe):
+        assert timeframe == "4h"
+        return bars.copy()
+
+    monkeypatch.setattr(models, "prepare_bars", fake_prepare)
+    # The last 4h bar has no new 5m OI snapshot. The prior snapshot is
+    # exactly one strategy bar old: it must not be carried forward.
+    oi = pd.DataFrame(
+        {"sum_open_interest": 100.0 * np.power(1.02, np.arange(len(index) - 1))},
+        index=index[:-1],
+    )
+    signals = models.make_independent_signals(
+        object(), "M11", "4h", open_interest=oi,
+        parameters={
+            "oi_lookback": 12,
+            "oi_change_min": 0.01,
+            "price_change_min": 0.005,
+            "taker_threshold": 0.55,
+        },
+    )
+
+    assert signals.signal.iloc[-2] == 1
+    assert signals.signal.iloc[-1] == 0
