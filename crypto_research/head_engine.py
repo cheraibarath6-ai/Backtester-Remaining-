@@ -158,9 +158,10 @@ def batch_history_start(score_start, warmup_bars=WARMUP_BARS):
     """Fetch enough preceding 4h bars to warm frozen indicators and carry positions."""
     if warmup_bars < 0:
         raise ValueError("warmup_bars must be non-negative")
-    requested_start = _utc(START_DEFAULT)
     score_start = _utc(score_start)
-    return max(requested_start, score_start - pd.Timedelta(hours=4 * warmup_bars))
+    # Warmup bars may precede the requested scoring window. Signals and
+    # performance are still scoped to the scoring window by the caller.
+    return score_start - pd.Timedelta(hours=4 * warmup_bars)
 
 
 def scope_batch_trades(trades, score_start, end):
