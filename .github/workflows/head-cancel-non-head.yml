@@ -33,9 +33,9 @@ jobs:
               "Authorization": f"Bearer {token}",
               "X-GitHub-Api-Version": "2022-11-28",
           }
-          unwanted_paths = {
-              ".github/workflows/independent-discovery.yml",
-              ".github/workflows/m6-m11-sensitivity.yml",
+          allowed_paths = {
+              ".github/workflows/head-batch2-resume.yml",
+              ".github/workflows/head-cancel-non-head.yml",
           }
           page = 1
           runs = []
@@ -51,7 +51,7 @@ jobs:
 
           cancelled = []
           for run in runs:
-              if run.get("path") not in unwanted_paths:
+              if run.get("path") in allowed_paths:
                   continue
               if run.get("status") not in {"queued", "in_progress", "pending", "waiting"}:
                   continue
