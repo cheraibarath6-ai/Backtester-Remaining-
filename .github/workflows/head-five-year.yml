@@ -12,18 +12,18 @@ on:
   workflow_dispatch:
     inputs:
       start:
-        description: Inclusive UTC start date
+        description: Inclusive UTC start date for this batch
         required: true
         default: "2021-11-14"
       end:
-        description: Exclusive UTC end date
+        description: Exclusive UTC end date for this batch
         required: true
-        default: "2026-11-14"
+        default: "2022-01-01"
 permissions:
   contents: read
 concurrency:
-  group: head-five-year-${{ github.ref }}
-  cancel-in-progress: true
+  group: head-year-batch-${{ github.ref }}-${{ inputs.start || '2021-11-14' }}-${{ inputs.end || '2022-01-01' }}
+  cancel-in-progress: false
 jobs:
   backtest:
     name: HEAD / ${{ matrix.symbol }} / 4h
@@ -50,7 +50,7 @@ jobs:
         run: >
           python -m crypto_research.head_engine
           --start "${{ inputs.start || '2021-11-14' }}"
-          --end "${{ inputs.end || '2026-11-14' }}"
+          --end "${{ inputs.end || '2022-01-01' }}"
           --symbol "${{ matrix.symbol }}"
           --fee-bps 5
           --slippage-bps 2
@@ -59,7 +59,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: head-five-year-${{ matrix.symbol }}
+          name: head-${{ inputs.start || '2021-11-14' }}-${{ inputs.end || '2022-01-01' }}-${{ matrix.symbol }}
           path: head_artifacts/
           if-no-files-found: warn
           retention-days: 90
@@ -79,7 +79,7 @@ jobs:
       - name: Download symbol artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: head-five-year-*
+          pattern: head-${{ inputs.start || '2021-11-14' }}-${{ inputs.end || '2022-01-01' }}-*
           path: input-artifacts
           merge-multiple: false
       - name: Aggregate and verify all ten symbols
@@ -91,7 +91,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: head-five-year-top10-results
+          name: head-${{ inputs.start || '2021-11-14' }}-${{ inputs.end || '2022-01-01' }}-top10-results
           path: head_results/
           if-no-files-found: warn
           retention-days: 90
