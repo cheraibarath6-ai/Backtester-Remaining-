@@ -213,14 +213,18 @@ def make_independent_signals(
             + "|"
             + btc_segment.astype("Int64").astype("string")
         ).where(btc_close.notna() & btc_segment.notna())
+        return_lookback = (
+            int(parameters.get("lookback", 20))
+            if model == "M10" else 3
+        )
         asset_return = d.close.groupby(group_key, dropna=True).pct_change(
-            20 if model == "M10" else 3, fill_method=None
+            return_lookback, fill_method=None
         )
         btc_return = btc_close.groupby(group_key, dropna=True).pct_change(
-            20 if model == "M10" else 3, fill_method=None
+            return_lookback, fill_method=None
         )
         if model == "M10":
-            lookback = int(parameters.get("lookback", 20))
+            lookback = return_lookback
             relative = asset_return - btc_return
             threshold = float(parameters.get("relative_threshold", 0.01))
             ema_fast_period = int(parameters.get("ema_fast", 50))
@@ -321,8 +325,8 @@ def make_independent_signals(
         macd_min_atr = float(parameters.get("macd_min_atr", 0.0))
         ao_threshold = ao_min_atr * atr
         macd_threshold = macd_min_atr * atr
-        ao_cross_up = (ao > ao_threshold) & (ao.shift(1) <= 0)
-        ao_cross_down = (ao < -ao_threshold) & (ao.shift(1) >= 0)
+        ao_cross_up = (ao > ao_threshold) & (ao.shift(1) <= ao_threshold)
+        ao_cross_down = (ao < -ao_threshold) & (ao.shift(1) >= -ao_threshold)
         long = (d.macd > macd_threshold) & ao_cross_up
         short = (d.macd < -macd_threshold) & ao_cross_down
         _set_atr_stops(d, long, short, float(parameters.get("stop_atr", 2.0)))
