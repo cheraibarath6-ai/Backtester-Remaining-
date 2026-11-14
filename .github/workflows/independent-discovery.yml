@@ -2,19 +2,7 @@ name: Independent Core Engine Discovery
 
 on:
   push:
-    branches: [main]
-    paths:
-      - ".github/workflows/independent-discovery.yml"
-      - "crypto_research/backtest.py"
-      - "crypto_research/data.py"
-      - "crypto_research/metrics.py"
-      - "crypto_research/independent_models.py"
-      - "crypto_research/independent_run.py"
-      - "crypto_research/aggregate_independent.py"
-      - "tests/test_backtest.py"
-      - "tests/test_independent_models.py"
-  pull_request:
-    branches: [main]
+    branches: [main, research/funding-notional-audit-v2]
     paths:
       - ".github/workflows/independent-discovery.yml"
       - "crypto_research/backtest.py"
