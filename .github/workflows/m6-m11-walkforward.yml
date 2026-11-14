@@ -1,89 +1,23 @@
-name: Independent M6-M11 Expanding Walk-Forward
+name: Legacy M6-M11 walk-forward disabled
 
 on:
-  workflow_dispatch:
-    inputs:
-      start:
-        description: Inclusive UTC start date
-        required: true
-        default: "2021-01-01"
-      end:
-        description: Exclusive UTC end date
-        required: true
-        default: "2026-11-01"
+  push:
+    branches: [research/funding-notional-audit-v2]
+    paths:
+      - ".github/workflows/m6-m11-walkforward.yml"
 
 permissions:
   contents: read
 
+# This legacy M6/M11 workflow is intentionally parked. The active research scope
+# is M6, M7, M8, M10, M12, M13, M14 and M15 only.
 concurrency:
   group: independent-m6-m11-walkforward-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
-  walkforward:
-    name: Walk-forward / ${{ matrix.symbol }}
+  parked:
+    if: false
     runs-on: ubuntu-latest
-    timeout-minutes: 360
-    strategy:
-      fail-fast: false
-      max-parallel: 2
-      matrix:
-        symbol: [BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT, XRPUSDT, ADAUSDT, DOGEUSDT]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: pip
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-      - name: Compile and run regression tests
-        run: python -m compileall -q crypto_research tests && python -m pytest -q
-      - name: Run independent expanding-window M6/M11 walk-forward
-        run: >
-          python -m crypto_research.walkforward_run
-          --start "${{ inputs.start || '2021-01-01' }}"
-          --end "${{ inputs.end || '2026-11-01' }}"
-          --symbol "${{ matrix.symbol }}"
-          --timeframe 4h
-          --test-years 2023 2024 2025 2026
-          --min-train-trades 10
-          --out walkforward_artifacts
-      - name: Upload symbol results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: walkforward-${{ matrix.symbol }}
-          path: walkforward_artifacts/
-          if-no-files-found: warn
-          retention-days: 90
-
-  aggregate:
-    name: Aggregate walk-forward results
-    runs-on: ubuntu-latest
-    needs: walkforward
-    if: always()
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: pip
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-      - name: Download symbol artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: walkforward-*
-          path: input-artifacts
-          merge-multiple: false
-      - name: Aggregate independent symbol streams
-        run: python -m crypto_research.aggregate_walkforward --input input-artifacts --out walkforward_results
-      - name: Upload combined walk-forward report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: independent-m6-m11-walkforward-results
-          path: walkforward_results/
-          if-no-files-found: warn
-          retention-days: 90
+      - run: echo "Legacy out-of-scope workflow parked; no backtests executed."
