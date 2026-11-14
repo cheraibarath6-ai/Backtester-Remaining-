@@ -92,3 +92,34 @@ def test_acquire_klines_fills_monthly_gaps_from_official_daily_archive(tmp_path,
     assert result.attrs["source"] == "binance_vision_official_usdm_1m_monthly_plus_daily"
     assert result.attrs["daily_gap_fill_attempted_days"] == ["2022-01-01"]
     assert result.attrs["daily_gap_fill_successful_days"] == ["2022-01-01"]
+    assert result.attrs["daily_gap_fill_missing_days"] == []
+
+
+def test_acquire_klines_records_unavailable_official_daily_archive(tmp_path, monkeypatch):
+    from crypto_research import data
+
+    base_ms = int(pd.Timestamp("2022-01-01 00:00:00", tz="UTC").timestamp() * 1000)
+    monthly_path = tmp_path / "monthly-gap.zip"
+    _write_kline_archive(monthly_path, [base_ms, base_ms + 120000])
+
+    def fake_get_zip(url, dest, verify_checksum=False):
+        if "/monthly/" in url:
+            return monthly_path
+        if "/daily/" in url:
+            return None
+        raise AssertionError(f"Unexpected archive URL: {url}")
+
+    monkeypatch.setattr(data, "get_zip", fake_get_zip)
+    result = data.acquire_klines(
+        "BTCUSDT", "2022-01-01 00:00:00+00:00",
+        "2022-01-01 00:03:00+00:00", root=tmp_path / "cache",
+    )
+
+    report = data.quality_report(
+        result, "BTCUSDT", "2022-01-01 00:00:00+00:00",
+        "2022-01-01 00:03:00+00:00",
+    )
+    assert len(result) == 2
+    assert report["coverage_pct"] == round(200 / 3, 4)
+    assert result.attrs["daily_gap_fill_attempted_days"] == ["2022-01-01"]
+    assert result.attrs["daily_gap_fill_missing_days"] == ["2022-01-01"]
