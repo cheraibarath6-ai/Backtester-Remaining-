@@ -14,7 +14,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from .data import acquire_funding, acquire_klines, quality_report
+from .data import acquire_klines, quality_report
+from .funding_patch import acquire_funding
 from .independent_models import make_independent_signals
 from .backtest import summarize
 
@@ -64,6 +65,7 @@ OFFICIAL_FUNDING_SOURCES = {
     "binance_vision_official_monthly_archive",
     "binance_vision_archive_plus_official_api",
     "binance_official_api",
+    "binance_vision_monthly_plus_daily_official_archive",
 }
 
 
