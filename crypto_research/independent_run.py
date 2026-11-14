@@ -6,22 +6,21 @@ from pathlib import Path
 
 import pandas as pd
 
-from .backtest import run_backtest, summarize
+from .backtest import completed_period_cohort, run_backtest, summarize
 from .data import acquire_funding, acquire_klines, quality_report
 from .grid import make_grid_signals
 from .independent_models import INDEPENDENT_MODELS, make_independent_signals
 from .metrics import acquire_open_interest, metrics_quality_report
 from .pfi_stage4 import PROFILES
 
-ALL_MODELS = ("M1", "M2", "M4", "M5", *INDEPENDENT_MODELS)
+ALL_MODELS = ("M6", "M7", "M8", "M10", "M12", "M13", "M14", "M15")
 TIMEFRAMES = ("5m", "15m", "1h", "4h")
 
 
 def _period_summary(trades: pd.DataFrame, start_year: int, end_year: int) -> dict:
-    if trades.empty:
-        return summarize(trades)
-    years = pd.to_datetime(trades.exit_time, utc=True).dt.year
-    return summarize(trades[(years >= start_year) & (years <= end_year)])
+    start = pd.Timestamp(year=start_year, month=1, day=1, tz="UTC")
+    end_exclusive = pd.Timestamp(year=end_year + 1, month=1, day=1, tz="UTC")
+    return summarize(completed_period_cohort(trades, start, end_exclusive))
 
 
 def _year_rows(trades: pd.DataFrame, base: dict, years=range(2021, 2027)) -> list[dict]:
@@ -53,6 +52,7 @@ def _evaluate(
     max_hold_hours: float,
     benchmark_raw: pd.DataFrame | None,
     oi: pd.DataFrame | None,
+    expected_end: str | None = None,
 ) -> tuple[dict, pd.DataFrame, list[dict]]:
     if model == "M11" and (oi is None or oi.empty):
         return {
@@ -92,6 +92,7 @@ def _evaluate(
         slippage_bps,
         rr,
         max_hold_bars=max_hold_bars,
+        expected_end=expected_end,
     )
     stats = summarize(trades)
     stats.update({
@@ -113,10 +114,10 @@ def _evaluate(
     yearly = _year_rows(trades, base)
     development = _period_summary(trades, 2021, 2024)
     validation = _period_summary(trades, 2025, 2025)
-    holdout = _period_summary(trades, 2026, 2026)
+    retrospective = _period_summary(trades, 2026, 2026)
     stats.update({f"development_{key}": value for key, value in development.items()})
     stats.update({f"validation_2025_{key}": value for key, value in validation.items()})
-    stats.update({f"holdout_2026_{key}": value for key, value in holdout.items()})
+    stats.update({f"retrospective_2026_{key}": value for key, value in retrospective.items()})
     return stats, trades, yearly
 
 
@@ -197,7 +198,7 @@ def main():
                     stats, trades, years = _evaluate(
                         raw, funding, symbol, model, variant, timeframe,
                         args.fee_bps, args.slippage_bps, args.rr,
-                        args.max_hold_hours, benchmark_raw, oi,
+                        args.max_hold_hours, benchmark_raw, oi, args.end,
                     )
                     row = {**base, **stats}
                     if not trades.empty:

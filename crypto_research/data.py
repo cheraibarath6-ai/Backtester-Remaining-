@@ -10,19 +10,34 @@ import pandas as pd
 import requests
 
 BASE = "https://data.binance.vision/data/futures/um/monthly"
+
 COLS = [
     "open_time", "open", "high", "low", "close", "volume", "close_time",
     "quote_volume", "trades", "taker_buy_base", "taker_buy_quote", "ignore",
 ]
 
+def _utc_timestamp(value):
+    """Normalize strings and naive/aware datetime values to UTC timestamps."""
+    timestamp = pd.Timestamp(value)
+    return timestamp.tz_localize("UTC") if timestamp.tzinfo is None else timestamp.tz_convert("UTC")
+
 
 def months(start, end):
-    return pd.date_range(
-        pd.Timestamp(start, tz="UTC"),
-        pd.Timestamp(end, tz="UTC"),
-        freq="MS",
-        inclusive="left",
+    """Return every UTC calendar month intersecting [start, end)."""
+    start_ts = pd.Timestamp(start)
+    end_ts = pd.Timestamp(end)
+    start_ts = start_ts.tz_localize("UTC") if start_ts.tzinfo is None else start_ts.tz_convert("UTC")
+    end_ts = end_ts.tz_localize("UTC") if end_ts.tzinfo is None else end_ts.tz_convert("UTC")
+    if end_ts <= start_ts:
+        return pd.DatetimeIndex([], tz="UTC")
+    # Period range includes partial first and last months while respecting the
+    # exclusive end boundary (including the final month only if it intersects).
+    periods = pd.period_range(
+        start=start_ts.tz_localize(None),
+        end=(end_ts - pd.Timedelta(nanoseconds=1)).tz_localize(None),
+        freq="M",
     )
+    return periods.to_timestamp(how="start").tz_localize("UTC")
 
 
 def _checksum_ok(url: str, path: Path) -> bool | None:
@@ -112,27 +127,128 @@ def read_zip(path: Path):
 
 def acquire_klines(symbol, start, end, root=Path("data")):
     parts = []
-    for month in months(start, end):
+    daily_archives_used = set()
+    daily_gap_fill_attempted = set()
+    daily_gap_fill_missing = set()
+    daily_gap_fill_errors = {}
+    start_ts = pd.Timestamp(start)
+    end_ts = pd.Timestamp(end)
+    start_ts = start_ts.tz_localize("UTC") if start_ts.tzinfo is None else start_ts.tz_convert("UTC")
+    end_ts = end_ts.tz_localize("UTC") if end_ts.tzinfo is None else end_ts.tz_convert("UTC")
+    for month in months(start_ts, end_ts):
         ym = month.strftime("%Y-%m")
         name = f"{symbol}-1m-{ym}.zip"
         url = f"{BASE}/klines/{symbol}/1m/{name}"
         path = get_zip(url, root / "raw" / "klines" / symbol / name, verify_checksum=True)
         if path:
             parts.append(read_zip(path))
+            continue
+
+        # If the monthly archive is unavailable, use official daily archives.
+        month_end = month + pd.offsets.MonthBegin(1)
+        day_start = max(month.normalize(), start_ts.normalize())
+        day_end = min(month_end, end_ts)
+        for day in pd.date_range(day_start, day_end.normalize(), freq="D", inclusive="left"):
+            ymd = day.strftime("%Y-%m-%d")
+            daily_gap_fill_attempted.add(ymd)
+            daily_name = f"{symbol}-1m-{ymd}.zip"
+            daily_url = f"{BASE.replace('/monthly', '/daily')}/klines/{symbol}/1m/{daily_name}"
+            try:
+                daily_path = get_zip(
+                    daily_url,
+                    root / "raw" / "klines_daily" / symbol / daily_name,
+                    verify_checksum=True,
+                )
+                if daily_path:
+                    daily = read_zip(daily_path)
+                    if not daily.empty:
+                        parts.append(daily)
+                        daily_archives_used.add(ymd)
+                    else:
+                        daily_gap_fill_missing.add(ymd)
+                else:
+                    daily_gap_fill_missing.add(ymd)
+            except Exception as error:
+                daily_gap_fill_errors[ymd] = f"{type(error).__name__}: {error}"
+                daily_gap_fill_missing.add(ymd)
+
     if not parts:
-        raise RuntimeError(f"No monthly kline archives found for {symbol}")
+        # A 404 for every official archive in this date range can mean the
+        # USD-M contract was not yet listed. Return an explicit empty frame so
+        # HEAD can record zero coverage instead of failing or inventing data.
+        data = pd.DataFrame(columns=COLS)
+        data.index = pd.DatetimeIndex([], tz="UTC", name="open_time")
+        data.attrs["duplicate_timestamps_before_dedup"] = 0
+        data.attrs["source"] = "binance_vision_official_usdm_1m"
+        data.attrs["daily_gap_fill_attempted_days"] = sorted(daily_gap_fill_attempted)
+        data.attrs["daily_gap_fill_successful_days"] = sorted(daily_archives_used)
+        data.attrs["daily_gap_fill_missing_days"] = sorted(daily_gap_fill_missing)
+        data.attrs["daily_gap_fill_errors"] = daily_gap_fill_errors
+        return data
 
     data = pd.concat(parts).sort_index()
     duplicate_count = int(data.index.duplicated().sum())
     data = data[~data.index.duplicated(keep="last")]
     data = data.loc[
-        (data.index >= pd.Timestamp(start, tz="UTC"))
-        & (data.index < pd.Timestamp(end, tz="UTC"))
+        (data.index >= _utc_timestamp(start))
+        & (data.index < _utc_timestamp(end))
     ]
-    data.attrs["duplicate_timestamps_before_dedup"] = duplicate_count
-    data.attrs["source"] = "binance_vision_official_usdm_1m"
-    return data
 
+    # A verified monthly file can still contain missing dates. Check its
+    # minute grid and try the corresponding official daily archive for only
+    # those days; never fill a gap from a third-party source.
+    if not data.empty:
+        expected = pd.date_range(
+            start_ts, end_ts - pd.Timedelta(minutes=1), freq="1min"
+        )
+        missing_index = expected.difference(data.index)
+        missing_days = sorted(set(ts.normalize() for ts in missing_index))
+        daily_parts = []
+        for day in missing_days:
+            ymd = day.strftime("%Y-%m-%d")
+            if ymd in daily_archives_used:
+                continue
+            daily_gap_fill_attempted.add(ymd)
+            daily_name = f"{symbol}-1m-{ymd}.zip"
+            daily_url = f"{BASE.replace('/monthly', '/daily')}/klines/{symbol}/1m/{daily_name}"
+            try:
+                daily_path = get_zip(
+                    daily_url,
+                    root / "raw" / "klines_daily" / symbol / daily_name,
+                    verify_checksum=True,
+                )
+                if daily_path:
+                    daily = read_zip(daily_path)
+                    if not daily.empty:
+                        daily_parts.append(daily)
+                        daily_archives_used.add(ymd)
+                    else:
+                        daily_gap_fill_missing.add(ymd)
+                else:
+                    daily_gap_fill_missing.add(ymd)
+            except Exception as error:
+                daily_gap_fill_errors[ymd] = f"{type(error).__name__}: {error}"
+                daily_gap_fill_missing.add(ymd)
+
+        if daily_parts:
+            merged = pd.concat([data, *daily_parts]).sort_index()
+            duplicate_count += int(merged.index.duplicated().sum())
+            data = merged[~merged.index.duplicated(keep="last")]
+            data = data.loc[
+                (data.index >= _utc_timestamp(start))
+                & (data.index < _utc_timestamp(end))
+            ]
+
+    data.attrs["duplicate_timestamps_before_dedup"] = duplicate_count
+    data.attrs["source"] = (
+        "binance_vision_official_usdm_1m"
+        if daily_archives_used else "binance_vision_official_usdm_1m"
+    )
+    data.attrs["daily_gap_fill_attempted_days"] = sorted(daily_gap_fill_attempted)
+    data.attrs["daily_gap_fill_successful_days"] = sorted(daily_archives_used)
+    data.attrs["daily_gap_fill_missing_days"] = sorted(daily_gap_fill_missing)
+    data.attrs["daily_gap_fill_errors"] = daily_gap_fill_errors
+    return data
 
 def _read_funding_zip(path: Path) -> pd.DataFrame:
     with zipfile.ZipFile(path) as archive:
@@ -170,8 +286,8 @@ def _read_funding_zip(path: Path) -> pd.DataFrame:
 
 def _funding_from_official_api(symbol, start, end):
     url = "https://fapi.binance.com/fapi/v1/fundingRate"
-    cursor = int(pd.Timestamp(start, tz="UTC").timestamp() * 1000)
-    end_ms = int(pd.Timestamp(end, tz="UTC").timestamp() * 1000)
+    cursor = int(_utc_timestamp(start).timestamp() * 1000)
+    end_ms = int(_utc_timestamp(end).timestamp() * 1000)
     rows = []
     while cursor < end_ms:
         response = requests.get(
@@ -225,8 +341,8 @@ def acquire_funding(symbol, start, end, root=Path("data")):
             archive = pd.concat(archive_parts).sort_index()
             archive = archive[~archive.index.duplicated(keep="last")]
             archive = archive.loc[
-                (archive.index >= pd.Timestamp(start, tz="UTC"))
-                & (archive.index < pd.Timestamp(end, tz="UTC"))
+                (archive.index >= _utc_timestamp(start))
+                & (archive.index < _utc_timestamp(end))
             ]
             missing_months = sorted(set(expected_months) - set(found_months))
             if not archive.empty and not missing_months:
@@ -253,8 +369,8 @@ def acquire_funding(symbol, start, end, root=Path("data")):
             out = api
             source = "binance_official_api"
         out = out.loc[
-            (out.index >= pd.Timestamp(start, tz="UTC"))
-            & (out.index < pd.Timestamp(end, tz="UTC"))
+            (out.index >= _utc_timestamp(start))
+            & (out.index < _utc_timestamp(end))
         ]
         out.attrs["source"] = source
         out.attrs["missing_archive_months"] = missing_months
@@ -286,8 +402,8 @@ def acquire_funding(symbol, start, end, root=Path("data")):
         out = out.set_index("funding_time")[["funding_rate"]].sort_index()
         out["mark_price"] = float("nan")
         out = out.loc[
-            (out.index >= pd.Timestamp(start, tz="UTC"))
-            & (out.index < pd.Timestamp(end, tz="UTC"))
+            (out.index >= _utc_timestamp(start))
+            & (out.index < _utc_timestamp(end))
         ]
         out.attrs["source"] = "third_party_huggingface_archive_unverified"
         out.attrs["official_archive_error"] = str(archive_error) if archive_error else None
@@ -298,16 +414,40 @@ def acquire_funding(symbol, start, end, root=Path("data")):
 
 def quality_report(data, symbol, start=None, end=None):
     if data.empty:
+        expected_minutes = 0
+        if start is not None and end is not None:
+            expected_start = _utc_timestamp(start)
+            expected_end = _utc_timestamp(end)
+            expected_minutes = max(
+                0, int((expected_end - expected_start).total_seconds() // 60)
+            )
+        missing_intervals = []
+        if expected_minutes:
+            missing_intervals.append({
+                "start": str(expected_start),
+                "end": str(expected_end - pd.Timedelta(minutes=1)),
+                "minutes": expected_minutes,
+            })
         return {
             "symbol": symbol, "rows": 0, "start": None, "end": None,
-            "expected_minutes": 0, "missing_minutes": None, "coverage_pct": 0.0,
+            "expected_minutes": expected_minutes,
+            "missing_minutes": expected_minutes,
+            "missing_interval_count": 1 if expected_minutes else 0,
+            "missing_intervals": missing_intervals,
+            "missing_intervals_truncated": False,
+            "coverage_pct": 0.0,
             "duplicate_timestamps": int(data.attrs.get("duplicate_timestamps_before_dedup", 0)),
             "bad_ohlc_rows": 0,
+            "source": data.attrs.get("source", "unknown"),
+            "daily_gap_fill_attempted_days": data.attrs.get("daily_gap_fill_attempted_days", []),
+            "daily_gap_fill_successful_days": data.attrs.get("daily_gap_fill_successful_days", []),
+            "daily_gap_fill_missing_days": data.attrs.get("daily_gap_fill_missing_days", []),
+            "daily_gap_fill_errors": data.attrs.get("daily_gap_fill_errors", {}),
         }
 
     if start is not None and end is not None:
-        expected_start = pd.Timestamp(start, tz="UTC")
-        expected_end = pd.Timestamp(end, tz="UTC")
+        expected_start = _utc_timestamp(start)
+        expected_end = _utc_timestamp(end)
         expected = pd.date_range(
             expected_start, expected_end - pd.Timedelta(minutes=1), freq="1min"
         )
@@ -319,7 +459,20 @@ def quality_report(data, symbol, start=None, end=None):
         | (data.low > data[["open", "close", "high"]].min(axis=1))
         | (data.high < data.low)
     ).sum()
-    missing = len(expected.difference(data.index))
+    missing_index = expected.difference(data.index)
+    missing = len(missing_index)
+    missing_intervals = []
+    if missing:
+        missing_frame = pd.DataFrame({"timestamp": missing_index})
+        missing_frame["gap_group"] = (
+            missing_frame.timestamp.diff().ne(pd.Timedelta(minutes=1)).cumsum()
+        )
+        for _, group in missing_frame.groupby("gap_group", sort=True):
+            missing_intervals.append({
+                "start": str(group.timestamp.iloc[0]),
+                "end": str(group.timestamp.iloc[-1]),
+                "minutes": int(len(group)),
+            })
     coverage = 100 * (len(expected) - missing) / len(expected) if len(expected) else 0.0
     return {
         "symbol": symbol,
@@ -328,8 +481,15 @@ def quality_report(data, symbol, start=None, end=None):
         "end": str(data.index.max()),
         "expected_minutes": len(expected),
         "missing_minutes": missing,
+        "missing_interval_count": len(missing_intervals),
+        "missing_intervals": missing_intervals[:100],
+        "missing_intervals_truncated": len(missing_intervals) > 100,
         "coverage_pct": round(coverage, 4),
         "duplicate_timestamps": int(data.attrs.get("duplicate_timestamps_before_dedup", 0)),
         "bad_ohlc_rows": int(bad),
         "source": data.attrs.get("source", "unknown"),
+        "daily_gap_fill_attempted_days": data.attrs.get("daily_gap_fill_attempted_days", []),
+        "daily_gap_fill_successful_days": data.attrs.get("daily_gap_fill_successful_days", []),
+        "daily_gap_fill_missing_days": data.attrs.get("daily_gap_fill_missing_days", []),
+        "daily_gap_fill_errors": data.attrs.get("daily_gap_fill_errors", {}),
     }

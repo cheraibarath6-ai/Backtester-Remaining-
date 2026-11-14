@@ -14,15 +14,21 @@ def run_backtest(
     slippage_bps=2.0,
     rr=2.0,
     max_hold_bars=288,
+    trailing_atr_multiple: float | None = None,
+    expected_end: str | pd.Timestamp | None = None,
 ):
     """
     Single-position, next-bar-open backtest.
 
     Signals on bar i-1 are filled at bar i open. The entry bar is included in
     barrier checks; if both stop and target are touched within one OHLC bar,
-    the conservative stop-first rule is used. Funding cashflows apply to every
-    USD-M perpetual position held across a funding timestamp, regardless of
-    which model generated the signal.
+    the conservative stop-first rule is used. An optional ATR trailing stop is
+    updated only after a completed bar and can trigger from the following bar.
+    Funding cashflows apply to every USD-M perpetual position held across a
+    funding timestamp, regardless of which model generated the signal. A
+    settlement exactly at entry/exit time is ordering-ambiguous at OHLC
+    resolution, so only its adverse cashflow is charged; favorable boundary
+    credits are not assumed. Strictly interior settlements use the signed rate.
     """
     bar_minutes = {
         "1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30,
@@ -48,6 +54,9 @@ def run_backtest(
         else np.full(len(bars), np.nan, dtype=float)
     )
     index = bars.index
+    if not index.is_monotonic_increasing or index.has_duplicates:
+        raise ValueError("Bars must have a strictly increasing, duplicate-free index")
+    bar_delta = pd.Timedelta(minutes=bar_minutes)
 
     funding_index = None
     funding_rates = None
@@ -55,27 +64,64 @@ def run_backtest(
         funding = funding.sort_index()
         funding_index = funding.index
         funding_rates = pd.to_numeric(funding.funding_rate, errors="coerce").to_numpy(dtype=float)
+        funding_marks = (
+            pd.to_numeric(funding["mark_price"], errors="coerce").to_numpy(dtype=float)
+            if "mark_price" in funding.columns
+            else np.full(len(funding), np.nan, dtype=float)
+        )
 
     trades = []
     pos = None
 
     def finish_position(position, ts, exit_px, reason, held_bars):
         side = position["side"]
-        exit_fill = float(exit_px) * (1 - side * slippage_bps / 10000)
+        raw_exit = float(exit_px)
+        raw_entry = float(position.get("raw_entry", position["entry"]))
+        exit_fill = raw_exit * (1 - side * slippage_bps / 10000)
         gross = side * (exit_fill - position["entry"]) / position["entry"]
-        fees = 2 * fee_bps / 10000
+        gross_price_move = side * (raw_exit - raw_entry) / raw_entry
+        entry_slippage = side * (position["entry"] - raw_entry) / raw_entry
+        exit_slippage = side * (raw_exit - exit_fill) / raw_entry
+        slippage_cost = entry_slippage + exit_slippage
+        # USD-M contracts keep a fixed base quantity: entry and exit fees are
+        # charged on their respective executed notionals, not twice the entry
+        # notional. All costs below are expressed relative to entry notional.
+        fee_rate = fee_bps / 10000
+        fees = fee_rate * (1 + exit_fill / position["entry"])
 
-        # Include an event exactly at entry conservatively because settlement
-        # timestamps may deviate by seconds. Searchsorted avoids scanning all
-        # funding rows for every trade.
+        # Funding is charged/credited on the mark-price notional at settlement.
+        # Prefer Binance's published mark price when available; otherwise use
+        # the latest completed strategy-bar close at or before the settlement
+        # timestamp (never a future bar). Convert the cashflow to entry-notional
+        # terms so it is comparable with gross PnL and net R.
         fund_cost = 0.0
         if funding_index is not None:
             first = funding_index.searchsorted(position["entry_time"], side="left")
             last = funding_index.searchsorted(ts, side="right")
-            fund_cost = float(np.nansum(side * funding_rates[first:last]))
+            if last > first:
+                rates = funding_rates[first:last]
+                marks = funding_marks[first:last].copy()
+                for j, event_time in enumerate(funding_index[first:last]):
+                    if not np.isfinite(marks[j]) or marks[j] <= 0:
+                        bar_i = index.searchsorted(event_time, side="right") - 1
+                        marks[j] = closes[bar_i] if bar_i >= 0 else position["entry"]
+                valid = np.isfinite(rates) & np.isfinite(marks) & (marks > 0)
+                if valid.any():
+                    event_times = funding_index[first:last][valid]
+                    cashflows = side * rates[valid] * marks[valid] / position["entry"]
+                    # OHLC data cannot order a funding event that shares the
+                    # exact entry/exit timestamp with the fill. Charge a
+                    # possible adverse payment, but never assume an ambiguous
+                    # favorable credit. Interior settlements are unambiguous.
+                    boundary = (
+                        (event_times == position["entry_time"])
+                        | (event_times == ts)
+                    )
+                    cashflows[boundary] = np.maximum(cashflows[boundary], 0.0)
+                    fund_cost = float(np.sum(cashflows))
 
         net = gross - fees - fund_cost
-        risk = abs(position["entry"] - position["stop"]) / position["entry"]
+        risk = abs(position["entry"] - position.get("initial_stop", position["stop"])) / position["entry"]
         trades.append({
             "symbol": symbol,
             "model": model,
@@ -85,8 +131,18 @@ def run_backtest(
             "exit_time": str(ts),
             "entry": position["entry"],
             "exit": exit_fill,
+            "raw_entry": raw_entry,
+            "raw_exit": raw_exit,
+            "gross_price_move_pct": gross_price_move * 100,
+            "gross_price_move_bps": gross_price_move * 10000,
+            "entry_slippage_pct": entry_slippage * 100,
+            "exit_slippage_pct": exit_slippage * 100,
+            "slippage_cost_pct": slippage_cost * 100,
+            "total_cost_pct": (fees + fund_cost + slippage_cost) * 100,
             "stop": position["stop"],
+            "initial_stop": position.get("initial_stop", position["stop"]),
             "target": position["target"],
+            "trailing_atr_multiple": trailing_atr_multiple,
             "exit_reason": reason,
             "gross_return_pct": gross * 100,
             "fees_pct": fees * 100,
@@ -99,6 +155,21 @@ def run_backtest(
         })
 
     for i in range(1, len(bars)):
+        delta = index[i] - index[i - 1]
+        if delta < bar_delta:
+            raise ValueError("Bars contain overlapping or sub-timeframe timestamps")
+        if delta > bar_delta:
+            # There is an unobserved interval. Close any open position at the
+            # last known close for audit, but mark it DATA_GAP so it is excluded
+            # from performance statistics. Never carry exposure across an
+            # interval in which stops/targets could not have been observed.
+            if pos is not None:
+                held = i - pos["entry_i"]
+                finish_position(pos, index[i - 1], closes[i - 1], "DATA_GAP", held)
+                pos = None
+            # Do not execute a stale signal from the last bar before the gap.
+            continue
+
         # A signal from the previous completed bar enters at this bar's open.
         if pos is None and signals[i - 1] != 0:
             side = int(signals[i - 1])
@@ -109,17 +180,21 @@ def run_backtest(
                 continue
 
             target = targets[i - 1]
-            if not np.isfinite(target):
+            if not np.isfinite(target) and trailing_atr_multiple is None:
                 target = entry + side * rr * abs(entry - stop)
+            elif not np.isfinite(target):
+                target = np.nan
             if (side == 1 and target <= entry) or (side == -1 and target >= entry):
                 continue
 
             pos = {
                 "side": side,
                 "entry": entry,
+                "raw_entry": float(raw_entry),
                 "stop": float(stop),
+                "initial_stop": float(stop),
                 "target": float(target),
-                "entry_time": index[i] - pd.Timedelta(minutes=bar_minutes),
+                "entry_time": index[i] - bar_delta,
                 "entry_i": i,
             }
 
@@ -160,15 +235,60 @@ def run_backtest(
             elif max_hold_bars is not None and held >= max_hold_bars:
                 exit_px, reason = closes[i], "TIME"
 
+        # A trailing stop is updated only after this completed bar has been
+        # fully evaluated. It can therefore trigger no earlier than the next
+        # bar, avoiding intrabar lookahead from the current high/low.
+        if exit_px is None and trailing_atr_multiple is not None and "atr" in bars.columns:
+            atr_value = float(bars["atr"].iloc[i])
+            if np.isfinite(atr_value) and atr_value > 0:
+                if pos["side"] == 1:
+                    candidate_stop = highs[i] - trailing_atr_multiple * atr_value
+                    pos["stop"] = max(pos["stop"], candidate_stop)
+                else:
+                    candidate_stop = lows[i] + trailing_atr_multiple * atr_value
+                    pos["stop"] = min(pos["stop"], candidate_stop)
+
         if exit_px is not None:
             finish_position(pos, index[i], exit_px, reason, held)
             pos = None
 
     if pos is not None:
         held = len(bars) - pos["entry_i"]
-        finish_position(pos, index[-1], closes[-1], "END_OF_SAMPLE", held)
+        terminal_reason = "END_OF_SAMPLE"
+        if expected_end is not None:
+            end_ts = pd.Timestamp(expected_end)
+            end_ts = end_ts.tz_localize("UTC") if end_ts.tzinfo is None else end_ts.tz_convert("UTC")
+            # Strategy bars are right-labelled; raw 1m bars retain open-time labels.
+            expected_last = end_ts - bar_delta if timeframe == "1m" else end_ts
+            if index[-1] < expected_last:
+                terminal_reason = "DATA_GAP"
+        finish_position(pos, index[-1], closes[-1], terminal_reason, held)
 
     return pd.DataFrame(trades)
+
+
+def _utc_timestamp(value):
+    ts = pd.Timestamp(value)
+    return ts.tz_localize("UTC") if ts.tzinfo is None else ts.tz_convert("UTC")
+
+
+def completed_period_cohort(
+    trades: pd.DataFrame, start: str | pd.Timestamp, end_exclusive: str | pd.Timestamp
+) -> pd.DataFrame:
+    """Return completed trades entered within [start, end); exclude gap/censored rows."""
+    if trades.empty:
+        return trades.copy()
+    if not {"entry_time", "exit_time"}.issubset(trades.columns):
+        raise ValueError("Period cohorts require entry_time and exit_time columns")
+    start_ts, end_ts = _utc_timestamp(start), _utc_timestamp(end_exclusive)
+    if end_ts <= start_ts:
+        raise ValueError("end_exclusive must be later than start")
+    entry = pd.to_datetime(trades["entry_time"], utc=True, errors="coerce")
+    exit_time = pd.to_datetime(trades["exit_time"], utc=True, errors="coerce")
+    mask = entry.notna() & exit_time.notna() & entry.ge(start_ts) & entry.lt(end_ts) & exit_time.lt(end_ts)
+    if "exit_reason" in trades.columns:
+        mask &= ~trades["exit_reason"].isin(["DATA_GAP", "END_OF_SAMPLE"])
+    return trades.loc[mask].copy()
 
 
 def summarize(t, risk_per_trade_pct=1.0):
@@ -183,9 +303,24 @@ def summarize(t, risk_per_trade_pct=1.0):
     """
     if risk_per_trade_pct <= 0:
         raise ValueError("risk_per_trade_pct must be > 0")
+    total_trade_records = int(len(t))
+    data_gap_trades = (
+        int(t.exit_reason.eq("DATA_GAP").sum())
+        if "exit_reason" in t.columns else 0
+    )
+    end_of_sample_trades = (
+        int(t.exit_reason.eq("END_OF_SAMPLE").sum())
+        if "exit_reason" in t.columns else 0
+    )
+    if "exit_reason" in t.columns:
+        t = t.loc[~t.exit_reason.isin(["DATA_GAP", "END_OF_SAMPLE"])].copy()
+
     if t.empty:
         return {
-            "trades": 0, "wins": 0, "losses": 0, "win_rate_pct": 0.0,
+            "trades": 0, "total_trade_records": total_trade_records,
+            "data_gap_trades": data_gap_trades,
+            "end_of_sample_trades": end_of_sample_trades,
+            "wins": 0, "losses": 0, "win_rate_pct": 0.0,
             "profit_factor": 0.0, "profit_factor_r": 0.0,
             "net_return_pct": 0.0, "notional_net_return_pct": 0.0,
             "net_bps": 0.0, "net_R": 0.0, "max_drawdown_pct": 0.0,
@@ -232,6 +367,9 @@ def summarize(t, risk_per_trade_pct=1.0):
         holding = pd.Series([float("nan")] * len(t), index=t.index)
     return {
         "trades": int(len(t)),
+        "total_trade_records": total_trade_records,
+        "data_gap_trades": data_gap_trades,
+        "end_of_sample_trades": end_of_sample_trades,
         "wins": int(len(w)),
         "losses": int(len(l)),
         "win_rate_pct": round(100 * len(w) / len(t), 2),

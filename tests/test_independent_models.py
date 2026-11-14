@@ -118,11 +118,54 @@ def test_m11_requires_real_open_interest_and_accepts_binance_field_names():
         make_independent_signals(raw, "M11", "5m")
     bars = prepare_bars(raw, "5m")
     oi = pd.DataFrame(
-        {"sum_open_interest_value": np.linspace(1_000_000, 1_100_000, len(bars))},
+        {"sum_open_interest": np.linspace(100.0, 101.0, len(bars))},
         index=bars.index,
     )
     signals = make_independent_signals(raw, "M11", "5m", open_interest=oi)
     assert set(signals.signal.unique()).issubset({-1, 0, 1})
+
+
+def test_m11_rejects_quote_value_only_open_interest():
+    raw = _synthetic_raw()
+    bars = prepare_bars(raw, "5m")
+    quote_only = pd.DataFrame(
+        {"sum_open_interest_value": np.linspace(1_000_000, 1_100_000, len(bars))},
+        index=bars.index,
+    )
+    with pytest.raises(ValueError, match="contract-denominated open interest"):
+        make_independent_signals(raw, "M11", "5m", open_interest=quote_only)
+
+
+def test_m11_prefers_contract_count_when_quote_value_is_also_present():
+    n = 5000
+    index = pd.date_range("2024-01-01", periods=n, freq="1min", tz="UTC")
+    close = 100.0 * np.exp(np.arange(n) * 0.00015)
+    open_ = np.r_[close[0], close[:-1]]
+    volume = np.full(n, 100.0)
+    raw = pd.DataFrame({
+        "open": open_,
+        "high": np.maximum(open_, close) * 1.0002,
+        "low": np.minimum(open_, close) * 0.9998,
+        "close": close,
+        "volume": volume,
+        "quote_volume": volume * close,
+        "trades": np.full(n, 10),
+        "taker_buy_base": volume * 0.60,
+        "taker_buy_quote": volume * 0.60 * close,
+    }, index=index)
+    bars = prepare_bars(raw, "5m")
+    contract_oi = 100.0 * np.exp(np.arange(len(bars)) * 0.0012)
+    quote_oi = np.linspace(2_000_000.0, 1_000_000.0, len(bars))
+    both = pd.DataFrame({
+        "sum_open_interest": contract_oi,
+        "sum_open_interest_value": quote_oi,
+    }, index=bars.index)
+    base_only = pd.DataFrame({"sum_open_interest": contract_oi}, index=bars.index)
+
+    both_signals = make_independent_signals(raw, "M11", "5m", open_interest=both)
+    base_signals = make_independent_signals(raw, "M11", "5m", open_interest=base_only)
+    assert both_signals.signal.equals(base_signals.signal)
+    assert (both_signals.signal == 1).any()
 
 
 def test_metrics_archive_parser_reads_official_snake_case_fields(tmp_path):
@@ -142,6 +185,110 @@ def test_metrics_archive_parser_reads_official_snake_case_fields(tmp_path):
 
     metrics = read_metrics_zip(archive_path, "BTCUSDT")
     assert len(metrics) == 2
+    assert "sum_open_interest" in metrics.columns
     assert "sum_open_interest_value" in metrics.columns
+    assert metrics.iloc[-1].sum_open_interest == 101.0
     assert metrics.iloc[-1].sum_open_interest_value == 4_250_000.0
     assert metrics.index.tz is not None
+
+
+
+def test_prepare_bars_resets_indicator_history_after_missing_bucket():
+    raw = _synthetic_raw(2400)
+    missing_minutes = pd.date_range(
+        "2024-01-01 10:00:00", periods=5, freq="1min", tz="UTC"
+    )
+    raw = raw.drop(missing_minutes)
+    bars = prepare_bars(raw, "5m")
+    first_post_gap = pd.Timestamp("2024-01-01 10:10:00", tz="UTC")
+    post = bars.loc[first_post_gap:]
+
+    assert len(post) >= 200
+    assert post.atr.iloc[:13].isna().all()
+    assert np.isfinite(post.atr.iloc[13])
+    assert post.ema200.iloc[:199].isna().all()
+    assert np.isfinite(post.ema200.iloc[199])
+
+
+
+def test_m11_does_not_calculate_oi_or_price_change_across_a_data_gap():
+    index = pd.date_range("2024-01-01", periods=1800, freq="1min", tz="UTC")
+    missing = pd.date_range("2024-01-01 10:00:00", periods=5, freq="1min", tz="UTC")
+    index = index.difference(missing)
+    close = np.full(len(index), 100.0)
+    post = index >= pd.Timestamp("2024-01-01 10:05:00", tz="UTC")
+    post_steps = np.arange(int(post.sum()))
+    close[post] = 100.0 * (1.0 + 0.01 * post_steps / 60.0)
+    open_ = np.r_[close[0], close[:-1]]
+    volume = np.full(len(index), 100.0)
+    raw = pd.DataFrame({
+        "open": open_,
+        "high": np.maximum(open_, close) * 1.001,
+        "low": np.minimum(open_, close) * 0.999,
+        "close": close,
+        "volume": volume,
+        "quote_volume": volume * close,
+        "trades": np.full(len(index), 10),
+        "taker_buy_base": volume * 0.60,
+        "taker_buy_quote": volume * 0.60 * close,
+    }, index=index)
+    bars = prepare_bars(raw, "5m")
+    first_post_gap = pd.Timestamp("2024-01-01 10:10:00", tz="UTC")
+    oi = pd.DataFrame(
+        {"sum_open_interest": np.where(
+            bars.index >= first_post_gap, 200.0, 100.0
+        )},
+        index=bars.index,
+    )
+    signals = make_independent_signals(
+        raw, "M11", "5m", open_interest=oi,
+        parameters={
+            "oi_lookback": 12,
+            "oi_change_min": 0.01,
+            "price_change_min": 0.005,
+            "taker_threshold": 0.55,
+        },
+    )
+    assert signals.data_segment.nunique() == 2
+    assert signals.loc[first_post_gap:, "signal"].eq(0).all()
+
+
+def test_m11_rejects_stale_oi_snapshots_on_slow_timeframes(monkeypatch):
+    import crypto_research.independent_models as models
+
+    index = pd.date_range("2024-01-01", periods=20, freq="4h", tz="UTC")
+    close = 100.0 * np.power(1.01, np.arange(len(index)))
+    bars = pd.DataFrame({
+        "open": close / 1.01,
+        "high": close * 1.001,
+        "low": close * 0.999,
+        "close": close,
+        "volume": np.full(len(index), 100.0),
+        "atr": np.full(len(index), 1.0),
+        "taker_ratio": np.full(len(index), 0.60),
+        "data_segment": np.zeros(len(index), dtype=int),
+    }, index=index)
+
+    def fake_prepare(raw, timeframe):
+        assert timeframe == "4h"
+        return bars.copy()
+
+    monkeypatch.setattr(models, "prepare_bars", fake_prepare)
+    # The last 4h bar has no new 5m OI snapshot. The prior snapshot is
+    # exactly one strategy bar old: it must not be carried forward.
+    oi = pd.DataFrame(
+        {"sum_open_interest": 100.0 * np.power(1.02, np.arange(len(index) - 1))},
+        index=index[:-1],
+    )
+    signals = models.make_independent_signals(
+        object(), "M11", "4h", open_interest=oi,
+        parameters={
+            "oi_lookback": 12,
+            "oi_change_min": 0.01,
+            "price_change_min": 0.005,
+            "taker_threshold": 0.55,
+        },
+    )
+
+    assert signals.signal.iloc[-2] == 1
+    assert signals.signal.iloc[-1] == 0

@@ -1,0 +1,23 @@
+name: Legacy M6-M11 cost stress disabled
+
+on:
+  push:
+    branches: [research/funding-notional-audit-v2]
+    paths:
+      - ".github/workflows/m6-m11-cost-stress.yml"
+
+permissions:
+  contents: read
+
+# This legacy M6/M11 workflow is intentionally parked. The active research scope
+# is M6, M7, M8, M10, M12, M13, M14 and M15 only.
+concurrency:
+  group: independent-m6-m11-cost-stress-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  parked:
+    if: false
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Legacy out-of-scope workflow parked; no backtests executed."

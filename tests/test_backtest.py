@@ -1,7 +1,7 @@
 import pandas as pd
 
-from crypto_research.backtest import run_backtest, summarize
-from crypto_research.data import _timestamp_unit
+from crypto_research.backtest import completed_period_cohort, run_backtest, summarize
+from crypto_research.data import _timestamp_unit, quality_report
 
 
 def _bars(entry_high=105.0, entry_low=99.0):
@@ -58,11 +58,73 @@ def test_perpetual_funding_is_applied_to_non_m5_models():
     assert abs(trades.iloc[0].net_return_pct + 0.1) < 1e-9
 
 
-def test_summary_reports_holding_time():
+def test_funding_uses_settlement_mark_not_entry_notional():
+    bars = _bars(entry_high=111.0)
+    funding = pd.DataFrame(
+        {"funding_rate": [0.001], "mark_price": [110.0]},
+        index=pd.DatetimeIndex(["2024-01-01 00:10:00"], tz="UTC"),
+    )
     trades = run_backtest(
-        _bars(entry_high=105.0), None, "BTCUSDT", "M6", "5m",
+        bars, funding, "BTCUSDT", "M6", "5m",
         fee_bps=0, slippage_bps=0, rr=2,
     )
+    assert len(trades) == 1
+    assert trades.iloc[0].exit_reason == "TARGET"
+    assert abs(trades.iloc[0].funding_cost_pct - 0.11) < 1e-9
+    assert abs(trades.iloc[0].net_return_pct - 9.89) < 1e-9
+
+
+def test_exit_fee_uses_exit_notional():
+    trades = run_backtest(
+        _bars(entry_high=111.0), None, "BTCUSDT", "M6", "5m",
+        fee_bps=5, slippage_bps=0, rr=2,
+    )
+    assert len(trades) == 1
+    assert trades.iloc[0].exit_reason == "TARGET"
+    assert abs(trades.iloc[0].fees_pct - 0.105) < 1e-9
+    assert abs(trades.iloc[0].net_return_pct - 9.895) < 1e-9
+
+
+def test_atr_trailing_stop_is_activated_only_after_bar_close():
+    index = pd.date_range("2024-01-01 00:05:00", periods=4, freq="5min", tz="UTC")
+    bars = pd.DataFrame(
+        {
+            "open": [100.0, 100.0, 101.0, 104.0],
+            "high": [101.0, 110.0, 105.0, 105.0],
+            "low": [99.0, 99.0, 99.0, 103.0],
+            "close": [100.0, 108.0, 103.0, 104.0],
+            "signal": [1, 0, 0, 0],
+            "stop": [90.0, float("nan"), float("nan"), float("nan")],
+            "target": [float("nan")] * 4,
+            "atr": [5.0] * 4,
+        },
+        index=index,
+    )
+    trades = run_backtest(
+        bars, None, "BTCUSDT", "M6", "5m",
+        fee_bps=0, slippage_bps=0, rr=2,
+        trailing_atr_multiple=2.0,
+    )
+    assert len(trades) == 1
+    trade = trades.iloc[0]
+    assert trade.exit_reason == "STOP"
+    assert trade.holding_bars == 2
+    assert trade.exit == 100.0
+    assert trade.initial_stop == 90.0
+    assert trade.stop == 100.0
+    assert abs(trade.net_R) < 1e-9
+
+
+def test_summary_reports_holding_time():
+    trades = pd.DataFrame({
+        "entry_time": ["2024-01-01T00:05:00Z"],
+        "exit_time": ["2024-01-01T00:15:00Z"],
+        "exit_reason": ["TIME"],
+        "net_bps": [0.0],
+        "net_return_pct": [0.0],
+        "net_R": [0.0],
+        "funding_cost_pct": [0.0],
+    })
     stats = summarize(trades)
     assert stats["trades"] == 1
     assert stats["avg_holding_minutes"] == 10.0
@@ -140,3 +202,199 @@ def test_summary_uses_fixed_risk_not_full_notional_compounding():
     assert abs(stats["max_drawdown_pct"] - (-2.941)) < 0.01
     assert stats["max_drawdown_R"] == -3.0
     assert stats["risk_per_trade_pct"] == 1.0
+
+
+
+def test_open_position_crossing_missing_bar_is_invalidated_and_not_scored():
+    index = pd.DatetimeIndex([
+        "2024-01-01 00:05:00+00:00",
+        "2024-01-01 00:10:00+00:00",
+        "2024-01-01 00:15:00+00:00",
+        "2024-01-01 00:30:00+00:00",
+        "2024-01-01 00:35:00+00:00",
+    ])
+    bars = pd.DataFrame(
+        {
+            "open": [100.0] * 5,
+            "high": [101.0, 102.0, 102.0, 103.0, 103.0],
+            "low": [99.0, 98.0, 98.0, 97.0, 97.0],
+            "close": [100.0, 101.0, 101.0, 102.0, 102.0],
+            # The signal on the last pre-gap bar must not enter after the gap.
+            "signal": [1, 0, 1, 0, 0],
+            "stop": [90.0, float("nan"), 90.0, float("nan"), float("nan")],
+            "target": [float("nan")] * 5,
+        },
+        index=index,
+    )
+    trades = run_backtest(
+        bars, None, "BTCUSDT", "M6", "5m",
+        fee_bps=0, slippage_bps=0, rr=20,
+    )
+    assert len(trades) == 1
+    assert trades.iloc[0].exit_reason == "DATA_GAP"
+    assert trades.iloc[0].holding_bars == 2
+    stats = summarize(trades)
+    assert stats["trades"] == 0
+    assert stats["data_gap_trades"] == 1
+    assert stats["total_trade_records"] == 1
+    assert stats["net_R"] == 0.0
+
+
+def test_quality_report_lists_contiguous_missing_minute_intervals():
+    index = pd.DatetimeIndex([
+        "2024-01-01 00:00:00+00:00",
+        "2024-01-01 00:01:00+00:00",
+        "2024-01-01 00:04:00+00:00",
+        "2024-01-01 00:05:00+00:00",
+    ])
+    data = pd.DataFrame(
+        {
+            "open": [100.0] * 4,
+            "high": [101.0] * 4,
+            "low": [99.0] * 4,
+            "close": [100.0] * 4,
+        },
+        index=index,
+    )
+    quality = quality_report(
+        data, "BTCUSDT",
+        start="2024-01-01 00:00:00",
+        end="2024-01-01 00:06:00",
+    )
+    assert quality["missing_minutes"] == 2
+    assert quality["missing_interval_count"] == 1
+    assert quality["missing_intervals"][0]["start"] == "2024-01-01 00:02:00+00:00"
+    assert quality["missing_intervals"][0]["end"] == "2024-01-01 00:03:00+00:00"
+    assert quality["missing_intervals"][0]["minutes"] == 2
+
+
+
+def test_trailing_missing_interval_is_audited_as_data_gap_not_end_of_sample():
+    trades = run_backtest(
+        _bars(entry_high=105.0),
+        None, "BTCUSDT", "M6", "5m",
+        fee_bps=0, slippage_bps=0, rr=20,
+        expected_end="2024-01-01 00:20:00",
+    )
+    assert len(trades) == 1
+    assert trades.iloc[0].exit_reason == "DATA_GAP"
+    stats = summarize(trades)
+    assert stats["trades"] == 0
+    assert stats["data_gap_trades"] == 1
+
+
+def test_complete_end_of_sample_is_not_mislabelled_as_data_gap():
+    trades = run_backtest(
+        _bars(entry_high=105.0),
+        None, "BTCUSDT", "M6", "5m",
+        fee_bps=0, slippage_bps=0, rr=20,
+        expected_end="2024-01-01 00:15:00",
+    )
+    assert len(trades) == 1
+    assert trades.iloc[0].exit_reason == "END_OF_SAMPLE"
+    stats = summarize(trades)
+    assert stats["trades"] == 0
+    assert stats["end_of_sample_trades"] == 1
+
+
+
+def test_summary_excludes_end_of_sample_records_from_performance_metrics():
+    trades = pd.DataFrame({
+        "entry_time": ["2024-01-01T00:00:00Z", "2024-01-01T01:00:00Z"],
+        "exit_time": ["2024-01-01T00:30:00Z", "2024-01-01T02:00:00Z"],
+        "exit_reason": ["TARGET", "END_OF_SAMPLE"],
+        "net_bps": [100.0, -500.0],
+        "net_return_pct": [1.0, -5.0],
+        "net_R": [1.0, -5.0],
+        "funding_cost_pct": [0.0, 0.0],
+        "holding_minutes": [30, 60],
+    })
+    stats = summarize(trades)
+    assert stats["total_trade_records"] == 2
+    assert stats["trades"] == 1
+    assert stats["end_of_sample_trades"] == 1
+    assert stats["net_R"] == 1.0
+    assert stats["net_bps"] == 100.0
+
+
+def test_period_cohort_uses_entry_time_and_requires_exit_before_period_end():
+    trades = pd.DataFrame({
+        "entry_time": [
+            "2024-12-31T20:00:00Z",
+            "2025-01-01T00:00:00Z",
+            "2025-12-30T00:00:00Z",
+            "2025-12-31T20:00:00Z",
+            "2025-12-30T00:00:00Z",
+        ],
+        "exit_time": [
+            "2025-01-01T04:00:00Z",
+            "2025-01-01T04:00:00Z",
+            "2025-12-31T00:00:00Z",
+            "2026-01-01T04:00:00Z",
+            "2025-12-31T00:00:00Z",
+        ],
+        "exit_reason": ["TARGET", "TARGET", "TARGET", "TARGET", "DATA_GAP"],
+        "net_R": [2.0, 1.0, 0.5, 3.0, -2.0],
+    })
+    cohort = completed_period_cohort(trades, "2025-01-01", "2026-01-01")
+    assert len(cohort) == 2
+    assert cohort.net_R.tolist() == [1.0, 0.5]
+    assert all(pd.to_datetime(cohort.entry_time, utc=True).dt.year == 2025)
+    assert (pd.to_datetime(cohort.exit_time, utc=True) < pd.Timestamp("2026-01-01", tz="UTC")).all()
+
+def test_favorable_funding_at_ambiguous_entry_and_exit_boundaries_is_not_assumed():
+    index = pd.date_range("2024-01-01 00:05:00", periods=3, freq="5min", tz="UTC")
+    bars = pd.DataFrame(
+        {
+            "open": [100.0, 100.0, 100.0],
+            "high": [101.0, 101.0, 101.0],
+            "low": [99.0, 99.0, 99.0],
+            "close": [100.0, 100.0, 100.0],
+            "signal": [-1, 0, 0],
+            "stop": [105.0, float("nan"), float("nan")],
+            "target": [float("nan"), float("nan"), float("nan")],
+        },
+        index=index,
+    )
+    funding = pd.DataFrame(
+        {"funding_rate": [0.001, 0.001], "mark_price": [100.0, 100.0]},
+        index=pd.DatetimeIndex(["2024-01-01 00:05:00", "2024-01-01 00:10:00"], tz="UTC"),
+    )
+
+    trades = run_backtest(
+        bars, funding, "BTCUSDT", "M11", "5m",
+        fee_bps=0, slippage_bps=0, rr=2, max_hold_bars=1,
+    )
+
+    assert len(trades) == 1
+    assert trades.iloc[0].exit_reason == "TIME"
+    assert abs(trades.iloc[0].funding_cost_pct) < 1e-12
+
+
+def test_favorable_funding_inside_holding_interval_is_applied():
+    index = pd.date_range("2024-01-01 00:05:00", periods=4, freq="5min", tz="UTC")
+    bars = pd.DataFrame(
+        {
+            "open": [100.0] * 4,
+            "high": [101.0] * 4,
+            "low": [99.0] * 4,
+            "close": [100.0] * 4,
+            "signal": [-1, 0, 0, 0],
+            "stop": [105.0, float("nan"), float("nan"), float("nan")],
+            "target": [float("nan")] * 4,
+        },
+        index=index,
+    )
+    funding = pd.DataFrame(
+        {"funding_rate": [0.001], "mark_price": [110.0]},
+        index=pd.DatetimeIndex(["2024-01-01 00:15:00"], tz="UTC"),
+    )
+
+    trades = run_backtest(
+        bars, funding, "BTCUSDT", "M11", "5m",
+        fee_bps=0, slippage_bps=0, rr=2, max_hold_bars=3,
+    )
+
+    assert len(trades) == 1
+    assert trades.iloc[0].exit_reason == "TIME"
+    assert abs(trades.iloc[0].funding_cost_pct + 0.11) < 1e-9

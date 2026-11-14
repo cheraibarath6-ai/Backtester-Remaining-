@@ -1,0 +1,100 @@
+name: Independent Eight-Engine Cost Stress and Monte Carlo
+
+on:
+  push:
+    branches: [research/funding-notional-audit-v2]
+    paths:
+      - "crypto_research/eight_engine_cost_stress_run.py"
+      - "crypto_research/aggregate_eight_engine_cost_stress.py"
+      - "tests/test_eight_engine_cost_stress.py"
+      - ".github/workflows/eight-engine-cost-stress.yml"
+  workflow_dispatch:
+    inputs:
+      start:
+        description: Inclusive UTC start date
+        required: true
+        default: "2021-01-01"
+      end:
+        description: Exclusive UTC end date
+        required: true
+        default: "2026-11-01"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: independent-eight-engine-cost-stress-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  stress:
+    name: Cost stress / ${{ matrix.symbol }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        symbol: [BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT, XRPUSDT, ADAUSDT, DOGEUSDT]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Compile scoped runner and run scoped tests
+        run: |
+          python -m compileall -q crypto_research/eight_engine_cost_stress_run.py crypto_research/aggregate_eight_engine_cost_stress.py
+          python -m pytest -q tests/test_eight_engine_cost_stress.py
+      - name: Run independent eight-engine cost stress
+        run: >
+          python -m crypto_research.eight_engine_cost_stress_run
+          --start "${{ inputs.start || '2021-01-01' }}"
+          --end "${{ inputs.end || '2026-11-01' }}"
+          --symbol "${{ matrix.symbol }}"
+          --models M6 M7 M8 M10 M12 M13 M14 M15
+          --timeframe 4h
+          --out eight_engine_cost_stress_artifacts
+      - name: Upload symbol cost-stress results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eight-engine-cost-stress-${{ matrix.symbol }}
+          path: eight_engine_cost_stress_artifacts/
+          if-no-files-found: warn
+          retention-days: 90
+
+  aggregate:
+    name: Aggregate independent cost-stress results
+    runs-on: ubuntu-latest
+    needs: stress
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Download completed symbol artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: eight-engine-cost-stress-*
+          path: input-artifacts
+          merge-multiple: false
+      - name: Aggregate available cost-stress results
+        run: >
+          python -m crypto_research.aggregate_eight_engine_cost_stress
+          --input input-artifacts
+          --out eight_engine_cost_stress_results
+      - name: Upload combined cost-stress report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eight-engine-cost-stress-results
+          path: eight_engine_cost_stress_results/
+          if-no-files-found: warn
+          retention-days: 90

@@ -1,0 +1,293 @@
+name: HEAD Five-Model OR Engine — 5Y Top-10 Futures Backtest
+
+on:
+  workflow_dispatch:
+    inputs:
+      start:
+        description: Inclusive UTC scoring-window start for this batch
+        required: true
+        default: "2022-01-01"
+      end:
+        description: Exclusive UTC scoring-window end for this batch
+        required: true
+        default: "2023-01-01"
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: head-year-batch-${{ github.ref }}-${{ inputs.start }}-${{ inputs.end }}
+  cancel-in-progress: false
+
+jobs:
+  backtest:
+    name: HEAD / ${{ matrix.symbol }} / 4h
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        symbol: [BTCUSDT, ETHUSDT, BNBUSDT, SOLUSDT, XRPUSDT, DOGEUSDT, ADAUSDT, LINKUSDT, LTCUSDT, AVAXUSDT]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Compile and test frozen HEAD OR logic
+        run: |
+          python -m compileall -q crypto_research/head_engine.py crypto_research/aggregate_head.py crypto_research/data.py
+          python -m pytest -q tests/test_head_engine.py tests/test_data_months.py tests/test_improvement_run.py
+      - name: Run this date batch with indicator warmup
+        run: >
+          python -m crypto_research.head_engine
+          --start "${{ inputs.start }}"
+          --end "${{ inputs.end }}"
+          --warmup-bars 130
+          --symbol "${{ matrix.symbol }}"
+          --fee-bps 5
+          --slippage-bps 2
+          --out head_artifacts
+      - name: Upload per-symbol results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: head-${{ inputs.start }}-${{ inputs.end }}-${{ matrix.symbol }}
+          path: head_artifacts/
+          if-no-files-found: warn
+          retention-days: 90
+
+  aggregate:
+    name: Aggregate cumulative HEAD ten-asset results
+    runs-on: ubuntu-latest
+    needs: backtest
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Download latest complete artifacts from every date batch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+          WORKFLOW_ID: "418165342"
+        run: |
+          python - <<'PY'
+          import io
+          import json
+          import os
+          import re
+          import urllib.parse
+          import urllib.request
+import requests
+          import zipfile
+          from pathlib import Path
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          branch = os.environ["GITHUB_REF_NAME"]
+          token = os.environ["GH_TOKEN"]
+          current_run = int(os.environ["GITHUB_RUN_ID"])
+          workflow_id = os.environ["WORKFLOW_ID"]
+          api = f"https://api.github.com/repos/{repo}"
+          symbols = {
+              "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT",
+              "DOGEUSDT", "ADAUSDT", "LINKUSDT", "LTCUSDT", "AVAXUSDT",
+          }
+          name_re = re.compile(
+              r"^head-(\d{4}-\d{2}-\d{2})-(\d{4}-\d{2}-\d{2})-([A-Z0-9]+)$"
+          )
+
+          def get_json(url):
+              req = urllib.request.Request(url, headers={
+                  "Accept": "application/vnd.github+json",
+                  "Authorization": f"Bearer {token}",
+                  "X-GitHub-Api-Version": "2022-11-28",
+              })
+              with urllib.request.urlopen(req, timeout=60) as response:
+                  return json.loads(response.read().decode("utf-8"))
+
+          runs = []
+          page = 1
+          while True:
+              query = urllib.parse.urlencode({
+                  "workflow_id": workflow_id,
+                  "branch": branch,
+                  "per_page": 100,
+                  "page": page,
+              })
+              items = get_json(f"{api}/actions/runs?{query}").get("workflow_runs", [])
+              runs.extend(items)
+              if len(items) < 100:
+                  break
+              page += 1
+          run_by_id = {int(run["id"]): run for run in runs}
+          run_by_id.setdefault(current_run, {
+              "id": current_run, "head_branch": branch,
+              "path": ".github/workflows/head-five-year.yml",
+              "conclusion": None, "status": "in_progress",
+              "created_at": "9999-12-31T23:59:59Z",
+          })
+
+          artifacts = []
+          page = 1
+          while True:
+              query = urllib.parse.urlencode({"per_page": 100, "page": page})
+              items = get_json(f"{api}/actions/artifacts?{query}").get("artifacts", [])
+              artifacts.extend(items)
+              if len(items) < 100:
+                  break
+              page += 1
+
+          grouped = {}
+          for artifact in artifacts:
+              if artifact.get("expired"):
+                  continue
+              match = name_re.match(artifact.get("name", ""))
+              if not match or match.group(3) not in symbols:
+                  continue
+              run_info = artifact.get("workflow_run") or {}
+              run_id = int(run_info.get("id", -1))
+              run = run_by_id.get(run_id)
+              if not run or run.get("head_branch") != branch:
+                  continue
+              if run.get("path") not in (
+                  ".github/workflows/head-five-year.yml",
+                  ".github/workflows/head-five-year.yaml",
+              ):
+                  continue
+              start, end, symbol = match.groups()
+              grouped.setdefault((start, end, run_id), {})[symbol] = artifact
+
+          batch_candidates = {}
+          for (start, end, run_id), symbol_artifacts in grouped.items():
+              run = run_by_id[run_id]
+              complete = set(symbol_artifacts) == symbols
+              is_current = run_id == current_run
+              if complete and (is_current or run.get("conclusion") == "success"):
+                  batch_candidates.setdefault((start, end), []).append(
+                      (run.get("created_at", ""), run_id, symbol_artifacts)
+                  )
+
+          root = Path("input-artifacts")
+          root.mkdir(parents=True, exist_ok=True)
+          chosen_count = 0
+          for batch, candidates in sorted(batch_candidates.items()):
+              _, run_id, symbol_artifacts = max(candidates, key=lambda item: item[0])
+              for symbol, artifact in sorted(symbol_artifacts.items()):
+                  # GitHub returns a short-lived object-storage URL. Do not
+                  # forward the GitHub bearer token to that different host:
+                  # urllib preserves custom Authorization headers on redirects,
+                  # which makes Azure Blob reject the SAS-authenticated download.
+                  api_response = requests.get(
+                      artifact["archive_download_url"],
+                      headers={
+                          "Accept": "application/vnd.github+json",
+                          "Authorization": f"Bearer {token}",
+                          "X-GitHub-Api-Version": "2022-11-28",
+                      },
+                      allow_redirects=False,
+                      timeout=60,
+                  )
+                  if api_response.is_redirect:
+                      signed_url = api_response.headers.get("Location")
+                      if not signed_url:
+                          raise RuntimeError(
+                              f"Artifact {artifact['name']} redirect has no Location"
+                          )
+                      download_response = requests.get(
+                          signed_url, timeout=180, allow_redirects=True
+                      )
+                  else:
+                      download_response = api_response
+                  download_response.raise_for_status()
+                  archive_bytes = download_response.content
+                  destination = root / f"{batch[0]}_{batch[1]}" / symbol
+                  destination.mkdir(parents=True, exist_ok=True)
+                  with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
+                      for member in archive.infolist():
+                          member_path = Path(member.filename)
+                          if member_path.is_absolute() or ".." in member_path.parts:
+                              raise RuntimeError(
+                                  f"Unsafe artifact member path: {member.filename}"
+                              )
+                          archive.extract(member, destination)
+                  chosen_count += 1
+              print(
+                  f"Selected complete batch {batch[0]}..{batch[1]} "
+                  f"from workflow run {run_id}"
+              )
+
+          print(
+              f"Downloaded {chosen_count} per-symbol artifacts across "
+              f"{len(batch_candidates)} complete date batches"
+          )
+          PY
+      - name: Aggregate and verify the full cumulative window
+        run: >
+          python -m crypto_research.aggregate_head
+          --input input-artifacts
+          --out head_results
+          --expected-start "2021-11-14"
+          --expected-end "${{ inputs.end }}"
+          --current-start "${{ inputs.start }}"
+          --current-end "${{ inputs.end }}"
+      - name: Upload cumulative HEAD report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: head-2021-11-14-${{ inputs.end }}-cumulative-top10-results
+          path: head_results/
+          if-no-files-found: warn
+          retention-days: 90
+
+  continue:
+    name: Start next annual date batch
+    runs-on: ubuntu-latest
+    needs: aggregate
+    if: needs.aggregate.result == 'success' && inputs.end != '2026-11-14'
+    steps:
+      - name: Calculate next contiguous date window
+        id: next
+        env:
+          CURRENT_END: ${{ inputs.end }}
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import os
+          from datetime import date
+          current = date.fromisoformat(os.environ["CURRENT_END"])
+          final = date(2026, 11, 14)
+          if current >= final:
+              print("has_next=false")
+          else:
+              next_end = current.replace(year=current.year + 1)
+              if next_end > final:
+                  next_end = final
+              print("has_next=true")
+              print(f"start={current.isoformat()}")
+              print(f"end={next_end.isoformat()}")
+          PY
+      - name: Dispatch next date batch
+        if: steps.next.outputs.has_next == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEXT_START: ${{ steps.next.outputs.start }}
+          NEXT_END: ${{ steps.next.outputs.end }}
+          TARGET_REF: ${{ github.ref_name }}
+        run: |
+          curl --fail --silent --show-error \
+            --request POST \
+            --header "Accept: application/vnd.github+json" \
+            --header "Authorization: Bearer ${GH_TOKEN}" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/head-five-year.yml/dispatches" \
+            --data "{\"ref\":\"${TARGET_REF}\",\"inputs\":{\"start\":\"${NEXT_START}\",\"end\":\"${NEXT_END}\"}}"
