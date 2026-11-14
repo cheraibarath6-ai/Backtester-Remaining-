@@ -115,3 +115,42 @@ The 5/2 bps per-side fee/slippage schedule contributes about 14 bps per round tr
 - M10 and M14 have some positive full-period 4h variants, but their 2025 notional net-bps/PF validation is negative. M12's isolated 1h BREAKOUT_10 result has only PF 1.009 in validation while net-R remains negative and the full-period result is poor. M7 and M13 did not establish a profitable 4h baseline or a convincing one-factor improvement.
 - The M8 4h one-factor candidates and M6 4h RR/stop variants are the strongest candidates for controlled within-model combinations. The next run tests only M6, M8 and M15 at 4h; it does not combine different engines. The 2025 validation and 2026 retrospective remain separate from development selection.
 - No engine is approved for live execution. The future forward holdout after 1 November 2026 is still required, along with cost stress, walk-forward and Monte Carlo checks on surviving candidates.
+
+
+## Exit-reason diagnosis — 4h baseline
+
+These counts and net bps exclude `DATA_GAP` and `END_OF_SAMPLE` records. The large negative contribution from stop exits is the main issue in several weak models; fees are not the dominant cause of their negative expectancy.
+
+| Model | Stop exits (count / net bps) | Target exits (count / net bps) | Time exits (count / net bps) |
+|---|---:|---:|---:|
+| M6 | 373 / -257,228 | 186 / +239,734 | 1,814 / +63,766 |
+| M7 | 2,043 / -848,188 | 556 / +288,775 | 1,811 / +368,129 |
+| M8 | 389 / -168,441 | 186 / +143,925 | 1,170 / +40,047 |
+| M10 | 1,151 / -664,033 | 409 / +444,942 | 4,736 / +237,195 |
+| M12 | 1,027 / -447,910 | 363 / +342,327 | 1,774 / +47,534 |
+| M13 | 1,377 / -752,968 | 390 / +376,207 | 6,187 / +209,911 |
+| M14 | 1,235 / -713,038 | 497 / +541,540 | 4,937 / +170,485 |
+| M15 | 371 / -155,064 | 113 / +92,627 | 1,556 / +42,071 |
+
+M6 RR 3.0 is consistent with this diagnosis: it reduces target exits from 186 to 78, but raises the time-exit contribution from about +63.8k to +150.2k bps while retaining 96.6% of baseline entry timestamps. M8 hold 48h increases target exits from 186 to 317 and raises the time-exit contribution from about +40.0k to +66.9k bps, while retaining 97.1% of baseline entries. These are model-specific exit effects, not cross-engine combinations.
+
+M7, M12 and M13 are not primarily failing because of the fixed 14 bps round-trip fee/slippage schedule: their stop-exit losses overwhelm the positive target/time exits. They need entry/stop logic diagnosis before more restrictive filters are considered. The current ledger does not yet record bar-by-bar MAE/MFE, so exact adverse/favourable excursion and stop-distance efficiency remain a diagnostic gap.
+
+## 2026 retrospective audit for the leading one-factor candidates
+
+These are completed entry cohorts from 1 January through 31 October 2026. They are retrospective audit evidence, not a pristine holdout.
+
+| Model / variant | Trades | Net PF | Net bps | Net-R |
+|---|---:|---:|---:|---:|
+| M6 baseline | 361 | 0.996 | -217 | -1.036 |
+| M6 RR 3.0 | 350 | 1.007 | +353 | -1.678 |
+| M6 hold 48h | 316 | 0.936 | -4,141 | -4.163 |
+| M6 stop 3.0 ATR | 352 | 1.007 | +335 | -0.820 |
+| M8 baseline | 272 | 0.811 | -6,647 | -15.590 |
+| M8 hold 48h | 263 | 0.753 | -11,585 | -24.913 |
+| M8 volume min 1.0 | 278 | 0.843 | -5,501 | -12.960 |
+| M8 expansion 1.5 ATR | 232 | 0.865 | -4,005 | -8.805 |
+| M15 baseline | 316 | 0.580 | -18,456 | -49.288 |
+| M15 ATR trail 2.5 | 289 | 0.725 | -14,129 | -23.054 |
+
+This weak 2026 cohort is why M8 is only a promising validation candidate, not a final selection. M6 RR 3.0 and stop 3.0 are close to flat in net bps but still negative in net-R. The future untouched forward holdout remains essential.
