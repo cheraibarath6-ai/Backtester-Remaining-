@@ -1,4 +1,5 @@
 name: Independent M6-M15 BTC ETH two-year backtest
+# Re-trigger after allow-listing this workflow in the branch execution guard.
 
 on:
   push:
