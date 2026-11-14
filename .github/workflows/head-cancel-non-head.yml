@@ -1,0 +1,76 @@
+name: Stop non-HEAD research runs
+
+on:
+  push:
+    branches:
+      - research/funding-notional-audit-v2
+    paths:
+      - .github/workflows/head-cancel-non-head.yml
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  cancel-non-head:
+    if: github.event.head_commit.message == 'Stop non-HEAD research runs'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cancel non-HEAD engine discovery and sensitivity workflows
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPOSITORY: ${{ github.repository }}
+          GH_BRANCH: research/funding-notional-audit-v2
+        run: |
+          python - <<'PY'
+          import os
+          import requests
+          from urllib.parse import urlencode
+
+          repo = os.environ["GH_REPOSITORY"]
+          branch = os.environ["GH_BRANCH"]
+          token = os.environ["GH_TOKEN"]
+          api = f"https://api.github.com/repos/{repo}"
+          headers = {
+              "Accept": "application/vnd.github+json",
+              "Authorization": f"Bearer {token}",
+              "X-GitHub-Api-Version": "2022-11-28",
+          }
+          unwanted_paths = {
+              ".github/workflows/independent-discovery.yml",
+              ".github/workflows/m6-m11-sensitivity.yml",
+          }
+          page = 1
+          runs = []
+          while True:
+              query = urlencode({"branch": branch, "per_page": 100, "page": page})
+              response = requests.get(f"{api}/actions/runs?{query}", headers=headers, timeout=60)
+              response.raise_for_status()
+              items = response.json().get("workflow_runs", [])
+              runs.extend(items)
+              if len(items) < 100:
+                  break
+              page += 1
+
+          cancelled = []
+          for run in runs:
+              if run.get("path") not in unwanted_paths:
+                  continue
+              if run.get("status") not in {"queued", "in_progress", "pending", "waiting"}:
+                  continue
+              response = requests.post(
+                  f"{api}/actions/runs/{run['id']}/cancel",
+                  headers=headers,
+                  timeout=60,
+              )
+              if response.status_code in {202, 409}:
+                  cancelled.append((run["id"], run.get("path"), response.status_code))
+              else:
+                  print(
+                      f"Cancel failed for {run['id']} {run.get('path')}: "
+                      f"{response.status_code} {response.text[:300]}"
+                  )
+                  response.raise_for_status()
+
+          print("Cancelled non-HEAD workflow runs:", cancelled)
+          PY
