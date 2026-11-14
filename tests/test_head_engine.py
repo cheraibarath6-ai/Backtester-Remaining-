@@ -101,3 +101,29 @@ def test_batch_scoping_retains_pre_window_data_gap_audit():
     scoped = scope_batch_trades(rows, "2022-01-01", "2023-01-01")
     assert len(scoped) == 1
     assert scoped.iloc[0].exit_reason == "DATA_GAP"
+
+
+
+def test_final_window_excludes_performance_exits_at_end_but_keeps_audit_rows():
+    from crypto_research.head_engine import scope_batch_trades
+
+    rows = pd.DataFrame({
+        "entry_time": [
+            "2026-11-13 00:00:00+00:00",
+            "2026-11-13 00:00:00+00:00",
+            "2026-11-13 00:00:00+00:00",
+            "2026-11-13 00:00:00+00:00",
+        ],
+        "exit_time": [
+            "2026-11-14 00:00:00+00:00",
+            "2026-11-14 00:00:00+00:00",
+            "2026-11-14 00:00:00+00:00",
+            "2026-11-13 20:00:00+00:00",
+        ],
+        "exit_reason": ["TARGET", "DATA_GAP", "END_OF_SAMPLE", "STOP"],
+    })
+    final = scope_batch_trades(
+        rows, "2026-01-01", "2026-11-14", include_end=False
+    )
+
+    assert final.index.tolist() == [1, 2, 3]
