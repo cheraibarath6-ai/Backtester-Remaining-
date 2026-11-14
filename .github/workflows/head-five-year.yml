@@ -6,8 +6,6 @@ on:
       - "crypto_research/data.py"
       - "crypto_research/funding_patch.py"
       - "crypto_research/head_engine.py"
-      - "crypto_research/data.py"
-      - "crypto_research/funding_patch.py"
       - "crypto_research/aggregate_head.py"
       - "tests/test_head_engine.py"
       - ".github/workflows/head-five-year.yml"
