@@ -310,6 +310,10 @@ def main():
         missing_minutes = 0
         missing_interval_count = 0
         missing_intervals = []
+        daily_gap_fill_attempted_days = set()
+        daily_gap_fill_successful_days = set()
+        daily_gap_fill_missing_days = set()
+        daily_gap_fill_errors = {}
         conflict_bars = 0
         multi_trigger_bars = 0
         head_trigger_bars = 0
@@ -320,6 +324,18 @@ def main():
                 candle_sources.add(str(candle_source))
             missing_minutes += int(candle_quality.get("missing_minutes") or 0)
             missing_interval_count += int(candle_quality.get("missing_interval_count") or 0)
+            daily_gap_fill_attempted_days.update(
+                candle_quality.get("daily_gap_fill_attempted_days") or []
+            )
+            daily_gap_fill_successful_days.update(
+                candle_quality.get("daily_gap_fill_successful_days") or []
+            )
+            daily_gap_fill_missing_days.update(
+                candle_quality.get("daily_gap_fill_missing_days") or []
+            )
+            daily_gap_fill_errors.update(
+                candle_quality.get("daily_gap_fill_errors") or {}
+            )
             for interval in candle_quality.get("missing_intervals") or []:
                 missing_intervals.append({
                     "batch_start": row.get("start_inclusive"),
@@ -373,6 +389,10 @@ def main():
             "missing_minutes": missing_minutes,
             "missing_interval_count": missing_interval_count,
             "missing_intervals": missing_intervals,
+            "daily_gap_fill_attempted_days": sorted(daily_gap_fill_attempted_days),
+            "daily_gap_fill_successful_days": sorted(daily_gap_fill_successful_days),
+            "daily_gap_fill_missing_days": sorted(daily_gap_fill_missing_days),
+            "daily_gap_fill_errors": daily_gap_fill_errors,
             "funding_source": funding_source,
             "funding_rows": funding_rows,
             "funding_actual_start": min(funding_starts) if funding_starts else None,
@@ -389,6 +409,10 @@ def main():
             "missing_minutes": missing_minutes,
             "missing_interval_count": missing_interval_count,
             "missing_intervals_json": json.dumps(missing_intervals, separators=(",", ":")),
+            "daily_gap_fill_attempted_days_json": json.dumps(sorted(daily_gap_fill_attempted_days)),
+            "daily_gap_fill_successful_days_json": json.dumps(sorted(daily_gap_fill_successful_days)),
+            "daily_gap_fill_missing_days_json": json.dumps(sorted(daily_gap_fill_missing_days)),
+            "daily_gap_fill_errors_json": json.dumps(daily_gap_fill_errors, separators=(",", ":")),
             "funding_source": funding_source,
             "funding_rows": funding_rows,
             "funding_actual_start": min(funding_starts) if funding_starts else None,
@@ -495,8 +519,8 @@ def main():
         "",
         "## Official candle and funding coverage",
         "",
-        "| Symbol | Candle source | Candle coverage | Funding source | Funding rows | Funding actual range | Funding max gap (h) | DATA_GAP | END_OF_SAMPLE |",
-        "|---|---|---:|---|---:|---|---:|---:|---:|",
+        "| Symbol | Candle source | Candle coverage | Daily archive missing days | Funding source | Funding rows | Funding actual range | Funding max gap (h) | DATA_GAP | END_OF_SAMPLE |",
+        "|---|---|---:|---|---|---:|---|---:|---:|---:|",
     ]
     for row in per_symbol_rows:
         funding_range = (
@@ -506,8 +530,9 @@ def main():
         )
         lines.append(
             f"| {row['symbol']} | {row['candle_source']} | "
-            f"{row['requested_window_coverage_pct']}% | {row['funding_source']} | "
-            f"{row['funding_rows']} | {funding_range} | "
+            f"{row['requested_window_coverage_pct']}% | "
+            f"{'; '.join(row['daily_gap_fill_missing_days']) or 'None'} | "
+            f"{row['funding_source']} | {row['funding_rows']} | {funding_range} | "
             f"{row['funding_max_gap_hours']} | {row['data_gap_trades']} | "
             f"{row['end_of_sample_trades']} |"
         )
