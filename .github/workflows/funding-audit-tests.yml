@@ -16,22 +16,6 @@ on:
       - "tests/test_combinations.py"
       - "tests/test_walkforward.py"
       - ".github/workflows/funding-audit-tests.yml"
-  pull_request:
-    branches: [main]
-    paths:
-      - "crypto_research/backtest.py"
-      - "crypto_research/metrics.py"
-      - "crypto_research/independent_models.py"
-      - "crypto_research/sensitivity_run.py"
-      - "crypto_research/aggregate_independent.py"
-      - "tests/test_backtest.py"
-      - "tests/test_sensitivity.py"
-      - "tests/test_aggregate_independent.py"
-      - "tests/test_cost_stress.py"
-      - "tests/test_combinations.py"
-      - "tests/test_walkforward.py"
-      - ".github/workflows/funding-audit-tests.yml"
-
 permissions:
   contents: read
 
