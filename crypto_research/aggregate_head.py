@@ -60,6 +60,30 @@ def _read_batch_artifacts(root):
     return summaries, ledgers, triggers
 
 
+def _dedupe_trigger_audit(trigger_audit):
+    """Deduplicate repeated exports without collapsing distinct trigger bars."""
+    if trigger_audit.empty:
+        return trigger_audit.copy()
+    audit = trigger_audit.copy()
+    audit["symbol"] = audit.symbol.astype(str).str.upper()
+    time_col = next(
+        (column for column in ("signal_time", "open_time", "bar_close_time")
+         if column in audit.columns),
+        None,
+    )
+    keys = ["symbol"]
+    if time_col:
+        audit[time_col] = pd.to_datetime(
+            audit[time_col], utc=True, errors="coerce"
+        )
+        keys.append(time_col)
+    keys.extend(
+        column for column in ("head_source", "trigger_sources")
+        if column in audit.columns
+    )
+    return audit.drop_duplicates(keys).reset_index(drop=True)
+
+
 def _valid_trades(all_trades):
     if all_trades.empty:
         return all_trades.copy()
@@ -261,15 +285,7 @@ def main():
         if trigger_frames else pd.DataFrame()
     )
     if not trigger_audit.empty:
-        trigger_audit["symbol"] = trigger_audit.symbol.astype(str).str.upper()
-        if "signal_time" in trigger_audit:
-            trigger_audit["signal_time"] = pd.to_datetime(
-                trigger_audit.signal_time, utc=True, errors="coerce"
-            )
-        trigger_audit = trigger_audit.drop_duplicates(
-            [c for c in ("symbol", "signal_time", "head_source", "trigger_sources")
-             if c in trigger_audit]
-        )
+        trigger_audit = _dedupe_trigger_audit(trigger_audit)
         trigger_audit.to_csv(out / "head_trigger_audit_all_symbols.csv", index=False)
 
     per_symbol_rows = []
