@@ -1,5 +1,5 @@
 name: HEAD sequential annual batches — five frozen models
-# Current stage marker: batch 1
+# Current stage marker: batch 2
 
 on:
   push:
@@ -44,7 +44,7 @@ jobs:
       - name: Compile and test frozen HEAD OR logic
         run: |
           python -m compileall -q crypto_research/head_engine.py crypto_research/aggregate_head.py crypto_research/data.py
-          python -m pytest -q tests/test_head_engine.py tests/test_data_months.py tests/test_improvement_run.py
+          python -m pytest -q tests/test_head_engine.py tests/test_data_months.py tests/test_improvement_run.py tests/test_aggregate_head.py
       - name: Run annual date batch with 130 completed 4h warmup bars
         run: >
           python -m crypto_research.head_engine
@@ -79,6 +79,8 @@ jobs:
           cache: pip
       - name: Install dependencies
         run: pip install -r requirements.txt
+      - name: Test per-bar HEAD trigger attribution
+        run: python -m pytest -q tests/test_aggregate_head.py
       - name: Download latest complete official HEAD artifacts from every successful batch
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
