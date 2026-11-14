@@ -18,8 +18,8 @@ def acquire_funding(symbol, start, end, root=Path("data")):
     for ym in missing_months:
         month_start = pd.Timestamp(f"{ym}-01", tz="UTC")
         month_end = month_start + pd.offsets.MonthBegin(1)
-        range_start = max(month_start, pd.Timestamp(start, tz="UTC"))
-        range_end = min(month_end, pd.Timestamp(end, tz="UTC"))
+        range_start = max(month_start, _data._utc_timestamp(start))
+        range_end = min(month_end, _data._utc_timestamp(end))
         for day in pd.date_range(range_start.normalize(), range_end.normalize(), freq="D", inclusive="left"):
             # Binance Vision publishes official daily funding archives.
             ymd = day.strftime("%Y-%m-%d")
