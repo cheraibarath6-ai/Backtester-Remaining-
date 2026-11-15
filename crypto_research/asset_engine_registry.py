@@ -67,6 +67,20 @@ ASSET_ENGINES = {
 # per-symbol parameters selected only from each strategy's own training data.
 ADDITIONAL_MODEL_FAMILIES = ("M6", "M8")
 
+# Research profile anchors for initial DOGE and cross-asset screening.
+ADDITIONAL_MODEL_PROFILE_ANCHORS = {
+    "M6": {
+        "baseline": {"donchian_period": 55, "volume_ratio_min": 1.0, "stop_atr": 2.5, "rr": 2.0, "hold_hours": 24},
+        "rr3_volume12": {"donchian_period": 55, "volume_ratio_min": 1.2, "stop_atr": 2.5, "rr": 3.0, "hold_hours": 24},
+        "hold48_stop3": {"donchian_period": 55, "volume_ratio_min": 1.0, "stop_atr": 3.0, "rr": 2.0, "hold_hours": 48},
+    },
+    "M8": {
+        "baseline": {"squeeze_lookback": 100, "squeeze_quantile": 0.20, "breakout_period": 20, "expansion_atr": 1.2, "volume_ratio_min": 1.2, "stop_atr": 2.0, "rr": 2.0, "hold_hours": 24},
+        "volume10_hold48": {"squeeze_lookback": 100, "squeeze_quantile": 0.20, "breakout_period": 20, "expansion_atr": 1.2, "volume_ratio_min": 1.0, "stop_atr": 2.0, "rr": 2.0, "hold_hours": 48},
+        "expansion15_hold48": {"squeeze_lookback": 100, "squeeze_quantile": 0.20, "breakout_period": 20, "expansion_atr": 1.5, "volume_ratio_min": 1.2, "stop_atr": 2.0, "rr": 2.0, "hold_hours": 48},
+    },
+}
+
 ENGINE_CONTRACT = {
     "execution": "completed-bar signal, next-bar-open fill",
     "accounting": "entry/exit fees, slippage and actual perpetual funding",
