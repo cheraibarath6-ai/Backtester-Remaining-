@@ -6,6 +6,7 @@ on:
     paths:
       - "crypto_research/asset_engine_registry.py"
       - "crypto_research/eight_engine_walkforward_run.py"
+      - "crypto_research/funding_patch.py"
       - ".github/workflows/doge-asset-research.yml"
   workflow_dispatch:
     inputs:
