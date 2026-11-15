@@ -29,31 +29,32 @@ def variants():
         })
 
     for n, vol, stop, rr, hold in itertools.product(
-        (20, 35, 55), (0.8, 1.0), (1.5, 2.0), (1.5, 2.0, 2.5), (12, 24, 48)
+        (20, 35, 55), (0.8, 1.0), (1.5, 2.0), (1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0), (12, 24, 48)
     ):
         add("M6", {"donchian_period": n, "volume_ratio_min": vol, "stop_atr": stop}, rr, hold)
 
-    for z, rsi, stop, hold in itertools.product(
-        (1.5, 2.0), (30.0, 35.0), (1.0, 1.5), (6, 12, 24)
+    for z, rsi, stop, rr, hold in itertools.product(
+        (1.5, 2.0), (30.0, 35.0), (1.0, 1.5),
+        (1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0), (6, 12, 24)
     ):
         add("M7", {"bb_z_entry": z, "rsi_long_max": rsi,
-                   "rsi_short_min": 100.0-rsi, "stop_atr": stop}, None, hold)
+                   "rsi_short_min": 100.0-rsi, "stop_atr": stop}, rr, hold)
 
     for lookback, breakout, expansion, stop, rr, hold in itertools.product(
-        (50, 100), (20, 40), (1.0, 1.5), (1.5, 2.0), (1.5, 2.5), (12, 24)
+        (50, 100), (20, 40), (1.0, 1.5), (1.5, 2.0), (1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0), (12, 24)
     ):
         add("M8", {"squeeze_lookback": lookback, "squeeze_quantile": 0.20,
                    "breakout_period": breakout, "expansion_atr": expansion,
                    "volume_ratio_min": 0.8, "stop_atr": stop}, rr, hold)
 
     for taker, vol, adx, stop, rr, hold in itertools.product(
-        (0.55, 0.60), (1.0, 1.2), (15.0, 20.0), (1.5, 2.0), (1.5, 2.5), (6, 12, 24)
+        (0.55, 0.60), (1.0, 1.2), (15.0, 20.0), (1.5, 2.0), (1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0), (6, 12, 24)
     ):
         add("M9", {"taker_min": taker, "volume_ratio_min": vol,
                    "adx_min": adx, "stop_atr": stop}, rr, hold)
 
     for breakout, adx, stop, rr, hold in itertools.product(
-        (20, 40), (18.0, 25.0), (1.5, 2.0), (1.5, 2.0, 2.5), (12, 24, 48)
+        (20, 40), (18.0, 25.0), (1.5, 2.0), (1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0), (12, 24, 48)
     ):
         add("M12", {"breakout_period": breakout, "trend_adx_min": adx,
                     "range_adx_max": 18.0, "range_bb_z": 2.0,
@@ -62,16 +63,17 @@ def variants():
 
     for adx, di, mom, stop, rr, hold in itertools.product(
         (18.0, 24.0), (18.0, 25.0), (7, 14), (1.5, 2.0),
-        (1.5, 2.0, 2.5), (12, 24, 48)
+        (1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0), (12, 24, 48)
     ):
         add("M14", {"adx_min": adx, "di_min": di,
                     "momentum_lookback": mom, "stop_atr": stop}, rr, hold)
 
-    for ao, macd, stop, trail, hold in itertools.product(
-        (0.0, 0.03), (0.0, 0.03), (1.5, 2.0), (1.5, 2.0, 2.5), (12, 24, 48)
+    for ao, macd, stop, rr, hold in itertools.product(
+        (0.0, 0.03), (0.0, 0.03), (1.5, 2.0),
+        (1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0), (12, 24, 48)
     ):
         add("M15", {"ao_cross_min_atr": ao, "macd_min_atr": macd,
-                    "stop_atr": stop}, None, hold, trail)
+                    "stop_atr": stop}, rr, hold, None)
 
     return out
 
@@ -82,7 +84,7 @@ def metrics_for(trades, start, end):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="BTC/ETH 1h frozen-grid discovery with 2025 holdout")
+    parser = argparse.ArgumentParser(description="BTC/ETH 1h all-model RR sweep with 2025 holdout")
     parser.add_argument("--symbol", required=True, choices=SYMBOLS)
     parser.add_argument("--start", default=TRAIN_START)
     parser.add_argument("--split", default=SPLIT)
@@ -127,7 +129,10 @@ def main():
         bars = make_independent_signals(
             raw, model, TIMEFRAME, parameters=cfg["parameters"]
         )
-        hold_bars = max(1, round(cfg["hold_hours"] * 60 / 60))
+        # RR sweep uses a common fixed-R target for every model so the RR dimension
+        # is actually tested (model-specific mean-reversion targets are disabled).
+        bars["target"] = float("nan")
+        hold_bars = max(1, round(cfg["hold_hours"]))
         trades = run_backtest(
             bars, funding, symbol, model, TIMEFRAME,
             fee_bps=args.fee_bps, slippage_bps=args.slippage_bps,
