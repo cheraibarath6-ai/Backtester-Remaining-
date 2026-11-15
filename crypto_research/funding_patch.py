@@ -242,8 +242,10 @@ def acquire_funding(symbol, start, end, root=Path("data")):
     out.attrs["daily_archive_days"] = daily_found
     out.attrs["api_filled_months"] = [
         ym for ym in missing_months if any(
-            (part.index >= pd.Timestamp(f"{ym}-01", tz="UTC"))
-            & (part.index < pd.Timestamp(f"{ym}-01", tz="UTC") + pd.offsets.MonthBegin(1))
+            bool((
+                (part.index >= pd.Timestamp(f"{ym}-01", tz="UTC"))
+                & (part.index < pd.Timestamp(f"{ym}-01", tz="UTC") + pd.offsets.MonthBegin(1))
+            ).any())
             for part in api_parts
         )
     ]
